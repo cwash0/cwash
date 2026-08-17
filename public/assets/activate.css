@@ -295,9 +295,10 @@ html.change-site-open, body.change-site-open { overflow: hidden; overscroll-beha
 .upgrade-panel-toggle::before,
 .upgrade-panel-toggle::after { content: none; }
 
-.upgrade-panel-toggle:hover,
-.upgrade-panel-toggle:focus-visible {
-  background: rgba(34, 211, 238, 0.055);
+button.upgrade-panel-toggle:hover:not(:disabled),
+button.upgrade-panel-toggle:focus-visible {
+  border-color: transparent;
+  background: transparent;
   box-shadow: none;
   filter: none;
 }
