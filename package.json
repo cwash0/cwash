@@ -1,0 +1,17 @@
+{
+  "name": "laundry-controller",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "node preview/local-preview.js",
+    "preview": "node preview/local-preview.js",
+    "preview:full": "node preview/local-preview.js",
+    "ngrok": "node preview/ngrok-tunnel.js",
+    "preview:tunnel": "node preview/ngrok-tunnel.js",
+    "preview:pay:safe": "node scripts/preview-pay.js",
+    "test:store-credit": "node scripts/test-store-credit.js"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  }
+}

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#050b14" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="Start compatible laundry machines in seconds with CircuitWash. A simpler, lower-cost way to pay for laundry." />
+  <title>CircuitWash | Start your wash</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/landing.css" />
+  <script>
+    (() => {
+      try {
+        const claim = JSON.parse(localStorage.getItem("zaftFreeTrialClaim") || "null");
+        if (claim?.used || claim?.activatedAt) document.documentElement.dataset.trialLocalState = "activated";
+      } catch (_) {}
+    })();
+  </script>
+</head>
+<body>
+
+  <header class="site-header" aria-label="Main navigation">
+    <a class="brand" href="/" aria-label="CircuitWash home">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <span>Circuit<span>Wash</span></span>
+    </a>
+    <nav class="header-actions" aria-label="Quick actions">
+      <a class="text-link" href="mailto:support@circuitwash.com">Support</a>
+      <a class="button button-small button-primary" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero section-shell" aria-labelledby="hero-title">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-orbit" aria-hidden="true">
+        <span class="orbit-ring orbit-ring-one"></span>
+        <span class="orbit-ring orbit-ring-two"></span>
+        <span class="orbit-ring orbit-ring-three"></span>
+        <span class="orbit-light orbit-light-one"></span>
+        <span class="orbit-light orbit-light-two"></span>
+      </div>
+      <div class="hero-copy">
+        <div class="pill"><span aria-hidden="true">&#10022;</span> Save on every wash</div>
+        <h1 id="hero-title">Stop overpaying<br />for <span>laundry.</span></h1>
+        <p>Activate compatible machines in seconds and keep more of your money.</p>
+        <div class="hero-actions">
+          <a class="button button-primary button-large primary-activation-cta" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
+          <a class="button button-secondary button-free button-large trial-entry is-loading" data-trial-entry href="/trial.html" aria-busy="true" aria-disabled="true">Try one activation free</a>
+        </div>
+        <ul class="trust-row" aria-label="CircuitWash benefits">
+          <li><span aria-hidden="true">&#10003;</span> No subscription</li>
+          <li><span aria-hidden="true">&#10003;</span> Fast activation</li>
+          <li><span aria-hidden="true">&#10003;</span> Secure checkout</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="quick-section section-shell" aria-labelledby="quick-title">
+      <div class="section-label"><span>Get started</span><h2 id="quick-title">What do you need?</h2></div>
+      <div class="quick-grid">
+        <a class="quick-card quick-primary" href="/activate.html">
+          <span class="quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2v9M7.1 4.9a8 8 0 1 0 9.8 0" /></svg></span>
+          <span class="quick-copy"><small>Already have a code?</small><strong>Activate a machine</strong></span>
+          <span class="quick-arrow" aria-hidden="true">&rarr;</span>
+        </a>
+
+        <a id="freeTrialCard" class="quick-card quick-free trial-entry is-loading" data-trial-entry href="/trial.html" aria-busy="true" aria-disabled="true">
+          <span class="quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.5 5.5l13 13M18.5 5.5l-13 13" /></svg></span>
+          <span class="quick-copy"><small>New here? First activation free</small><strong>Try CircuitWash free</strong></span>
+          <span class="card-cta"><span class="quick-arrow" aria-hidden="true">&rarr;</span></span>
+        </a>
+
+        <a class="quick-card" href="/pay.html">
+          <span class="quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h18v11H3zM3 10h18M7 15h3" /></svg></span>
+          <span class="quick-copy"><small>Need access?</small><strong>Buy a code</strong></span>
+          <span class="quick-arrow" aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="value-card section-shell" aria-labelledby="value-title">
+      <span class="value-icon" aria-hidden="true">&pound;</span>
+      <div>
+        <span class="section-kicker">Spend smarter</span>
+        <h2 id="value-title">Laundry adds up.</h2>
+        <p>CircuitWash helps you spend less on compatible laundry machines &mdash; potentially saving you hundreds over time.</p>
+      </div>
+      <a href="#how-it-works">See how CircuitWash works <span aria-hidden="true">&rarr;</span></a>
+    </section>
+
+    <section class="how-section section-shell" id="how-it-works" aria-labelledby="how-title">
+      <div class="section-heading">
+        <h2 id="how-title">Pay once. Wash all year.</h2>
+      </div>
+      <div class="wash-model">
+        <div class="payment-comparison" aria-label="Paying at the laundry site means paying for every wash. With CircuitWash, you pay once for one year of access at that site.">
+          <div class="payment-option payment-option-site">
+            <div class="payment-copy">
+              <span class="payment-label">Circuit Go</span>
+              <strong>Pay every wash</strong>
+            </div>
+            <div class="payment-flow payment-flow-repeat" aria-hidden="true">
+              <span class="payment-token">&pound;</span><span class="flow-arrow">&rarr;</span>
+              <span class="payment-token">&pound;</span><span class="flow-arrow">&rarr;</span>
+              <span class="payment-token">&pound;</span><span class="flow-arrow">&rarr;</span>
+              <span class="payment-token">&pound;</span>
+            </div>
+          </div>
+
+          <div class="comparison-vs" aria-hidden="true"><span>VS</span></div>
+
+          <div class="payment-option payment-option-circuitwash">
+            <div class="payment-copy">
+              <span class="payment-label">CircuitWash</span>
+              <strong>Pay once</strong>
+            </div>
+            <div class="payment-flow payment-flow-once" aria-hidden="true">
+              <span class="payment-token payment-token-once">&pound;</span>
+              <span class="flow-arrow">&rarr;</span>
+              <span class="year-token">1 year</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="compact-process" aria-label="Find your site, then pay once, then wash.">
+          <span>Find your site</span><span class="process-arrow" aria-hidden="true">&rarr;</span>
+          <span>Pay once</span><span class="process-arrow" aria-hidden="true">&rarr;</span>
+          <span>Wash</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="alternative-card section-shell" id="independent" aria-labelledby="alternative-title">
+      <div>
+        <span class="section-kicker">A simpler option</span>
+        <h2 id="alternative-title">Looking for a CircuitGo alternative?</h2>
+        <p>CircuitWash offers a simpler way to access compatible laundry machines while helping you spend less.</p>
+      </div>
+      <small>CircuitWash is independent and is not affiliated with, endorsed by or operated by CircuitGo.</small>
+    </section>
+
+    <section class="final-cta section-shell" aria-labelledby="final-title">
+      <div>
+        <span class="section-kicker">Ready when you are</span>
+        <h2 id="final-title">Ready to wash?</h2>
+      </div>
+      <div class="final-actions">
+        <a class="button button-primary primary-activation-cta" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
+        <a class="button button-secondary button-free trial-entry is-loading" data-trial-entry href="/trial.html" aria-busy="true" aria-disabled="true">Try one activation free</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer section-shell">
+    <a class="brand footer-brand" href="/" aria-label="CircuitWash home"><span class="brand-mark" aria-hidden="true"><span></span></span><span>Circuit<span>Wash</span></span></a>
+    <nav aria-label="Footer links">
+      <a href="mailto:support@circuitwash.com">Support</a>
+      <a href="#how-it-works">FAQ</a>
+      <a href="mailto:support@circuitwash.com?subject=CircuitWash%20terms" aria-label="Request CircuitWash terms">Terms</a>
+      <a href="mailto:support@circuitwash.com?subject=CircuitWash%20privacy" aria-label="Ask about CircuitWash privacy">Privacy</a>
+    </nav>
+    <p>&copy; <span id="currentYear"></span> CircuitWash. Independent laundry access.</p>
+  </footer>
+
+  <div class="mobile-sticky" id="mobileSticky" aria-hidden="true">
+    <a class="button button-primary" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
+  </div>
+
+  <script src="assets/landing.js"></script>
+</body>
+</html>

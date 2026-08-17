@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <meta name="color-scheme" content="dark" />
+  <title>Share feedback | CircuitWash</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(15, 23, 42, .94);
+      --panel-soft: rgba(2, 6, 23, .35);
+      --border: rgba(148, 163, 184, .16);
+      --text: #e8f0fc;
+      --muted: #99aac2;
+      --accent: #22d3ee;
+      --ok: #22c55e;
+      --bad: #ef4444;
+      --star: #fbbf24;
+      --font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; background: var(--bg); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: var(--font);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(34, 211, 238, .18), transparent 30%),
+        radial-gradient(circle at 92% 4%, rgba(124, 58, 237, .2), transparent 31%),
+        linear-gradient(180deg, #08111f 0%, #0b1322 48%, #07111b 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .35;
+      background:
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: 30px 30px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,.7), transparent 82%);
+    }
+    button, textarea { font: inherit; }
+    .hidden { display: none !important; }
+    .page { position: relative; width: min(100% - 28px, 680px); margin: 0 auto; padding: 28px 0 54px; }
+    .topline { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: #dbe8f8; font-weight: 800; }
+    .brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 18px rgba(34,211,238,.72); }
+    .home-link { padding: 9px 12px; border: 1px solid var(--border); border-radius: 11px; color: var(--text); text-decoration: none; font-weight: 750; background: rgba(255,255,255,.04); }
+    .card { padding: clamp(20px, 5vw, 34px); border: 1px solid var(--border); border-radius: 26px; background: var(--panel); box-shadow: 0 24px 65px rgba(0,0,0,.28); backdrop-filter: blur(16px); }
+    .eyebrow { color: var(--accent); font-size: .76rem; font-weight: 850; letter-spacing: .11em; text-transform: uppercase; }
+    h1 { margin: 10px 0 8px; font-size: clamp(2rem, 8vw, 3.25rem); line-height: 1.03; letter-spacing: -.055em; }
+    .intro { margin: 0; color: var(--muted); line-height: 1.6; font-size: 1rem; }
+    .context { margin-top: 16px; padding: 13px 14px; border: 1px solid rgba(34,211,238,.18); border-radius: 15px; background: rgba(34,211,238,.055); }
+    .context strong { display: block; }
+    .context span { display: block; margin-top: 3px; color: var(--muted); font-size: .86rem; }
+    form { margin-top: 26px; }
+    .question { padding: 20px 0; border-top: 1px solid rgba(148,163,184,.12); }
+    .question:first-child { border-top: 0; padding-top: 0; }
+    .question-title { margin: 0; font-size: 1.05rem; font-weight: 820; }
+    .question-help { margin: 5px 0 0; color: var(--muted); font-size: .86rem; line-height: 1.45; }
+    .required { color: var(--accent); }
+    .stars { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+    .star-button {
+      min-height: 64px;
+      border: 1px solid rgba(148,163,184,.16);
+      border-radius: 14px;
+      color: #64748b;
+      background: rgba(2,6,23,.32);
+      font-size: 2rem;
+      cursor: pointer;
+      transition: transform 140ms ease, border-color 140ms ease, color 140ms ease, background 140ms ease;
+    }
+    .star-button:hover { transform: translateY(-2px); border-color: rgba(251,191,36,.4); }
+    .star-button.active { color: var(--star); border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.09); }
+    .star-label { min-height: 1.3em; margin-top: 8px; color: #fcd34d; font-size: .85rem; font-weight: 750; }
+    .choice-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-top: 14px; }
+    .choice-button {
+      min-height: 48px;
+      border: 1px solid rgba(148,163,184,.18);
+      border-radius: 13px;
+      color: #dce8f7;
+      background: rgba(2,6,23,.32);
+      font-weight: 780;
+      cursor: pointer;
+    }
+    .choice-button.active { color: #04111b; border-color: transparent; background: var(--accent); }
+    textarea {
+      width: 100%; min-height: 145px; margin-top: 14px; padding: 13px 14px;
+      border: 1px solid rgba(148,163,184,.2); border-radius: 14px; outline: 0;
+      color: var(--text); background: linear-gradient(180deg, rgba(18,27,45,.98), rgba(9,14,25,.98));
+      resize: vertical; line-height: 1.55;
+    }
+    textarea:focus { border-color: rgba(34,211,238,.5); box-shadow: 0 0 0 4px rgba(34,211,238,.11); }
+    .counter { margin-top: 6px; color: var(--muted); font-size: .76rem; text-align: right; }
+    .submit-row { display: grid; gap: 10px; margin-top: 8px; }
+    .submit-button {
+      min-height: 52px; border: 0; border-radius: 14px; color: #04111b; background: var(--accent);
+      font-weight: 850; cursor: pointer; box-shadow: 0 12px 28px rgba(34,211,238,.18);
+    }
+    .submit-button:disabled { opacity: .55; cursor: not-allowed; }
+    .message { min-height: 1.35em; color: var(--muted); font-size: .87rem; text-align: center; }
+    .message.bad { color: #fca5a5; }
+    .privacy { margin: 18px 0 0; color: #7f91aa; font-size: .76rem; line-height: 1.55; text-align: center; }
+    .state { min-height: 360px; display: grid; place-items: center; text-align: center; }
+    .state-icon { width: 68px; height: 68px; margin: 0 auto 16px; display: grid; place-items: center; border-radius: 50%; background: rgba(34,211,238,.1); color: var(--accent); font-size: 2rem; font-weight: 900; }
+    .state-icon.ok { color: #86efac; background: rgba(34,197,94,.1); }
+    .state h2 { margin: 0 0 8px; font-size: 1.7rem; }
+    .state p { max-width: 430px; margin: 0 auto; color: var(--muted); line-height: 1.6; }
+    .state a { display: inline-flex; margin-top: 20px; padding: 11px 15px; border: 1px solid var(--border); border-radius: 12px; color: var(--text); text-decoration: none; font-weight: 780; }
+    footer { margin-top: 16px; color: #7f91aa; font-size: .78rem; text-align: center; }
+    footer a { color: #b7c7db; }
+    @media (max-width: 520px) {
+      .page { width: min(100% - 18px, 680px); padding-top: 12px; }
+      .card { padding: 20px 16px; border-radius: 21px; }
+      .stars { gap: 5px; }
+      .star-button { min-height: 57px; font-size: 1.7rem; }
+      .choice-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="topline">
+      <div class="brand"><span class="brand-dot" aria-hidden="true"></span>CircuitWash</div>
+      <a class="home-link" href="/">Home</a>
+    </div>
+
+    <section class="card">
+      <div id="loadingState" class="state">
+        <div>
+          <div class="state-icon">…</div>
+          <h2>Loading your form</h2>
+          <p>Please wait a moment.</p>
+        </div>
+      </div>
+
+      <div id="errorState" class="state hidden">
+        <div>
+          <div class="state-icon">!</div>
+          <h2 id="errorTitle">This link is unavailable</h2>
+          <p id="errorText">The feedback link may be invalid or expired.</p>
+          <a href="mailto:support@circuitwash.com">Contact support</a>
+        </div>
+      </div>
+
+      <div id="successState" class="state hidden">
+        <div>
+          <div class="state-icon ok">✓</div>
+          <h2>Thank you</h2>
+          <p>Your feedback has been submitted. It helps us improve CircuitWash for everyone.</p>
+          <a href="/">Return home</a>
+        </div>
+      </div>
+
+      <div id="formView" class="hidden">
+        <div class="eyebrow">Customer feedback</div>
+        <h1>How did we do?</h1>
+        <p class="intro">A few quick answers will help us make the service better. This should take about one minute.</p>
+
+        <div id="siteContext" class="context hidden">
+          <strong id="siteName"></strong>
+          <span id="siteAddress"></span>
+        </div>
+
+        <form id="feedbackForm" novalidate>
+          <section class="question">
+            <h2 class="question-title">How would you rate your experience? <span class="required">*</span></h2>
+            <p class="question-help">Select between 1 and 5 stars.</p>
+            <div id="starPicker" class="stars" role="radiogroup" aria-label="Overall rating">
+              <button class="star-button" type="button" data-rating="1" role="radio" aria-checked="false" aria-label="1 star">★</button>
+              <button class="star-button" type="button" data-rating="2" role="radio" aria-checked="false" aria-label="2 stars">★</button>
+              <button class="star-button" type="button" data-rating="3" role="radio" aria-checked="false" aria-label="3 stars">★</button>
+              <button class="star-button" type="button" data-rating="4" role="radio" aria-checked="false" aria-label="4 stars">★</button>
+              <button class="star-button" type="button" data-rating="5" role="radio" aria-checked="false" aria-label="5 stars">★</button>
+            </div>
+            <div id="starLabel" class="star-label" aria-live="polite"></div>
+          </section>
+
+          <section class="question">
+            <h2 class="question-title">Would you recommend CircuitWash? <span class="required">*</span></h2>
+            <div id="recommendPicker" class="choice-grid" role="radiogroup" aria-label="Would you recommend CircuitWash">
+              <button class="choice-button" type="button" data-recommend="YES" role="radio" aria-checked="false">Yes</button>
+              <button class="choice-button" type="button" data-recommend="MAYBE" role="radio" aria-checked="false">Maybe</button>
+              <button class="choice-button" type="button" data-recommend="NO" role="radio" aria-checked="false">No</button>
+            </div>
+          </section>
+
+          <section class="question">
+            <h2 class="question-title">Anything else you would like us to know?</h2>
+            <p class="question-help">Tell us what worked well or what we could improve.</p>
+            <textarea id="comments" placeholder="Optional comments"></textarea>
+          </section>
+
+          <div class="submit-row">
+            <button id="submitButton" class="submit-button" type="submit">Submit feedback</button>
+            <div id="formMessage" class="message" aria-live="polite"></div>
+          </div>
+        </form>
+
+        <p id="privacyText" class="privacy">Your response is linked to the email address that received this private form so we can understand the customer experience. The link can be submitted once.</p>
+      </div>
+    </section>
+
+    <footer>Need help instead? <a href="mailto:support@circuitwash.com">support@circuitwash.com</a></footer>
+  </main>
+
+  <script>
+    const API_URL = "/.netlify/functions/feedback";
+    const searchParams = new URLSearchParams(location.search);
+    const token = searchParams.get("token") || "";
+    const previewMode = searchParams.get("preview") === "1";
+    let rating = 0;
+    let recommendation = "";
+    let recommendationTouched = false;
+    let ratingSubmitted = false;
+    let ratingSaveTimer = null;
+    let ratingSavePromise = null;
+    let pendingRatingSave = false;
+
+    const els = {
+      loadingState: document.getElementById("loadingState"),
+      errorState: document.getElementById("errorState"),
+      errorTitle: document.getElementById("errorTitle"),
+      errorText: document.getElementById("errorText"),
+      successState: document.getElementById("successState"),
+      formView: document.getElementById("formView"),
+      siteContext: document.getElementById("siteContext"),
+      siteName: document.getElementById("siteName"),
+      siteAddress: document.getElementById("siteAddress"),
+      feedbackForm: document.getElementById("feedbackForm"),
+      starLabel: document.getElementById("starLabel"),
+      comments: document.getElementById("comments"),
+      submitButton: document.getElementById("submitButton"),
+      formMessage: document.getElementById("formMessage"),
+      privacyText: document.getElementById("privacyText")
+    };
+
+    const starLabels = {
+      1: "Very poor",
+      2: "Poor",
+      3: "Okay",
+      4: "Good",
+      5: "Excellent"
+    };
+
+    function recommendationForRating(value) {
+      if (value >= 4) return "YES";
+      if (value === 3) return "MAYBE";
+      return "NO";
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, options);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) {
+        const error = new Error(data.message || "Something went wrong.");
+        error.code = data.error || "request_failed";
+        throw error;
+      }
+      return data;
+    }
+
+    async function loadForm() {
+      if (previewMode) {
+        els.loadingState.classList.add("hidden");
+        els.formView.classList.remove("hidden");
+        els.siteName.textContent = "Your laundry site";
+        els.siteAddress.textContent = "This is a preview of the customer feedback form.";
+        els.siteContext.classList.remove("hidden");
+        els.privacyText.textContent = "Preview mode — nothing submitted here will be saved.";
+        return;
+      }
+
+      if (!token) {
+        showError("Invalid feedback link", "Open the private feedback link from CircuitWash.");
+        return;
+      }
+
+      try {
+        const data = await requestJson(`${API_URL}?token=${encodeURIComponent(token)}`);
+        els.loadingState.classList.add("hidden");
+        els.formView.classList.remove("hidden");
+        const site = data.site || {};
+        if (site.name) {
+          els.siteName.textContent = site.name;
+          els.siteAddress.textContent = site.address || "Your selected laundry site";
+          els.siteContext.classList.remove("hidden");
+        }
+        if (data.source === "POPUP") {
+          els.privacyText.textContent = "This private form can be submitted once.";
+        }
+      } catch (error) {
+        if (error.code === "already_submitted") {
+          showError("Feedback already submitted", "Thank you—this private form has already been completed.");
+        } else if (error.code === "link_expired") {
+          showError("This link has expired", "Feedback links are available for a limited time.");
+        } else {
+          showError("This link is unavailable", error.message || "The feedback link may be invalid or expired.");
+        }
+      }
+    }
+
+    function showError(title, text) {
+      els.loadingState.classList.add("hidden");
+      els.formView.classList.add("hidden");
+      els.successState.classList.add("hidden");
+      els.errorTitle.textContent = title;
+      els.errorText.textContent = text;
+      els.errorState.classList.remove("hidden");
+    }
+
+    function setRating(value) {
+      rating = value;
+      if (!recommendationTouched) setRecommendation(recommendationForRating(rating));
+      document.querySelectorAll("[data-rating]").forEach((button) => {
+        const active = Number(button.dataset.rating) <= rating;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-checked", String(Number(button.dataset.rating) === rating));
+      });
+      els.starLabel.textContent = `${rating} star${rating === 1 ? "" : "s"} · ${starLabels[rating]}`;
+      queueRatingSave();
+    }
+
+    function setRecommendation(value) {
+      recommendation = value;
+      document.querySelectorAll("[data-recommend]").forEach((button) => {
+        const active = button.dataset.recommend === recommendation;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-checked", String(active));
+      });
+    }
+
+    function queueRatingSave() {
+      if (previewMode || !token || !rating) return;
+      clearTimeout(ratingSaveTimer);
+      ratingSaveTimer = setTimeout(() => saveRatingOnly(), 250);
+    }
+
+    async function saveRatingOnly() {
+      if (previewMode || !token || !rating) return;
+      if (ratingSavePromise) {
+        pendingRatingSave = true;
+        return ratingSavePromise;
+      }
+      ratingSavePromise = (async () => {
+        do {
+          pendingRatingSave = false;
+          const currentRating = rating;
+          const currentRecommendation = recommendation || recommendationForRating(currentRating);
+          try {
+            await requestJson(API_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: ratingSubmitted ? "update_rating" : "submit",
+                token,
+                rating: currentRating,
+                recommend: currentRecommendation,
+                comments: ""
+              })
+            });
+            ratingSubmitted = true;
+            setMessage("Rating saved. Add comments if you like.", "");
+          } catch (error) {
+            setMessage(error.message || "Could not save rating.", "bad");
+            break;
+          }
+        } while (pendingRatingSave);
+      })().finally(() => {
+        ratingSavePromise = null;
+      });
+      return ratingSavePromise;
+    }
+
+    async function flushRatingSave() {
+      clearTimeout(ratingSaveTimer);
+      if (ratingSavePromise) await ratingSavePromise;
+      if (!ratingSubmitted && rating) await saveRatingOnly();
+    }
+
+    async function submitFeedback(event) {
+      event.preventDefault();
+      if (!rating) {
+        setMessage("Choose a star rating.", "bad");
+        document.getElementById("starPicker").scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (!recommendation) {
+        setMessage("Tell us whether you would recommend CircuitWash.", "bad");
+        document.getElementById("recommendPicker").scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
+      els.submitButton.disabled = true;
+      els.submitButton.textContent = "Submitting…";
+      setMessage("", "");
+      try {
+        if (previewMode) {
+          await new Promise((resolve) => setTimeout(resolve, 450));
+          els.formView.classList.add("hidden");
+          els.successState.classList.remove("hidden");
+          return;
+        }
+
+        await flushRatingSave();
+        if (ratingSubmitted) {
+          await requestJson(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "update_rating", token, rating, recommend: recommendation })
+          });
+          await requestJson(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "update_comment", token, comments: els.comments.value })
+          });
+        } else {
+          await requestJson(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, rating, recommend: recommendation, comments: els.comments.value })
+          });
+        }
+        els.formView.classList.add("hidden");
+        els.successState.classList.remove("hidden");
+      } catch (error) {
+        if (error.code === "already_submitted") {
+          showError("Feedback already submitted", "Thank you—this private form has already been completed.");
+        } else {
+          setMessage(error.message || "Feedback could not be submitted.", "bad");
+        }
+      } finally {
+        els.submitButton.disabled = false;
+        els.submitButton.textContent = "Submit feedback";
+      }
+    }
+
+    function setMessage(text, tone) {
+      els.formMessage.textContent = text;
+      els.formMessage.className = `message ${tone || ""}`.trim();
+    }
+
+    document.querySelectorAll("[data-rating]").forEach((button) => {
+      button.addEventListener("click", () => setRating(Number(button.dataset.rating)));
+    });
+    document.querySelectorAll("[data-recommend]").forEach((button) => {
+      button.addEventListener("click", () => {
+        recommendationTouched = true;
+        setRecommendation(button.dataset.recommend);
+        queueRatingSave();
+      });
+    });
+    els.feedbackForm.addEventListener("submit", submitFeedback);
+
+    loadForm();
+  </script>
+</body>
+</html>

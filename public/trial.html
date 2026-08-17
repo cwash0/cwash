@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="Claim one free CircuitWash machine activation." />
+  <title>Try CircuitWash for free</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/trial.css" />
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div class="hero-top">
+        <div class="eyebrow">One free activation</div>
+        <a class="hero-home" href="/">Home</a>
+      </div>
+      <h1>Try for free</h1>
+    </header>
+
+    <p class="progress">Step 1 of 2 <span aria-hidden="true">·</span> Find your laundry room</p>
+
+    <section class="card">
+      <div id="trialUnavailable" class="trial-state hidden" aria-live="polite">
+        <strong>Free trials are not available right now.</strong>
+        <div class="state-actions">
+          <a class="button" href="/pay.html">Buy a code</a>
+          <a class="button secondary" href="/activate.html">Activate</a>
+        </div>
+      </div>
+
+      <div id="trialClaimed" class="trial-state success hidden" aria-live="polite">
+        <strong>Your free trial is ready.</strong>
+        <div class="state-actions">
+          <a class="button" href="/trial-activate.html">Continue free trial</a>
+          <a class="button secondary" href="/pay.html">Buy a code</a>
+        </div>
+      </div>
+
+      <section id="trialFormPanel" class="trial-form-panel hidden" aria-labelledby="siteHeading">
+        <div class="section-title-row">
+          <h2 id="siteHeading">Where are you washing?</h2>
+          <p>Find the laundry room you want to use.</p>
+        </div>
+
+        <div class="search-experience">
+          <div class="search-field">
+            <label class="visually-hidden" for="trialSiteSearch">Search for your laundry room</label>
+            <span class="search-icon" aria-hidden="true"></span>
+            <input
+              id="trialSiteSearch"
+              type="search"
+              autocomplete="off"
+              enterkeyhint="search"
+              placeholder="Search site, address or postcode"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="trialSiteResults"
+            />
+          </div>
+          <div id="trialSiteResults" class="trial-results hidden" role="listbox" aria-label="Matching laundry rooms"></div>
+        </div>
+
+        <div id="selectedTrialSite" class="selected-site hidden" aria-live="polite"></div>
+        <div id="trialMessage" class="trial-message" aria-live="polite"></div>
+
+        <details class="site-help">
+          <summary>Don't know your site name?</summary>
+          <div class="site-guide">
+            <h3>Check the on site terminal</h3>
+            <div class="site-guide-body">
+              <div class="site-guide-visual">
+                <img class="terminal-device" src="/assets/terminal-guide.png?v=20260817" alt="Payment terminal showing the site name at the top of its screen" />
+                <span class="site-name-highlight" aria-hidden="true"></span>
+              </div>
+              <div class="site-guide-copy">
+                <p>Example: Park Road 117</p>
+              </div>
+            </div>
+          </div>
+        </details>
+      </section>
+    </section>
+
+    <p class="support-note">Need help? Email <a href="mailto:support@circuitwash.com">support@circuitwash.com</a>.</p>
+  </main>
+
+  <script src="assets/trial.js"></script>
+</body>
+</html>

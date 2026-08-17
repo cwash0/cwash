@@ -1,0 +1,784 @@
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { Pool } = require("pg");
+const { ensureStoreSchema } = require("./_store-db");
+
+const pool = new Pool({
+  connectionString:
+    process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+let cachedSiteMap = null;
+let cachedSiteIndex = null;
+let cachedAddressIndex = null;
+let usageSchemaReady = false;
+
+function loadSiteMap() {
+  if (cachedSiteMap) return cachedSiteMap;
+
+  const candidatePaths = [
+    path.join(process.cwd(), "netlify", "data", "access-config.json"),
+    path.join(__dirname, "..", "data", "access-config.json"),
+    "/var/task/netlify/data/access-config.json"
+  ];
+
+  let raw = null;
+  let usedPath = null;
+
+  for (const candidate of candidatePaths) {
+    try {
+      raw = fs.readFileSync(candidate, "utf8");
+      usedPath = candidate;
+      break;
+    } catch (_) {
+      // Try the next runtime path.
+    }
+  }
+
+  if (!raw) {
+    throw new Error(`Config file not found. Tried: ${candidatePaths.join(" | ")}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Invalid JSON in ${usedPath}: ${error.message}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Config root must be an object keyed by site_id");
+  }
+
+  cachedSiteMap = parsed;
+  return cachedSiteMap;
+}
+
+function getSiteIndex() {
+  if (cachedSiteIndex) return cachedSiteIndex;
+
+  cachedSiteIndex = Object.entries(loadSiteMap())
+    .map(([id, value]) => {
+      const name = String(value?.siteName || id);
+      return {
+        id,
+        name,
+        idSearch: id.toLowerCase(),
+        nameSearch: name.toLowerCase()
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return cachedSiteIndex;
+}
+
+function searchSites(query, limit = 20) {
+  const term = String(query || "").trim().toLowerCase();
+  if (term.length < 2) return [];
+
+  return getSiteIndex()
+    .map((site) => {
+      let score = 99;
+
+      if (site.idSearch === term || site.nameSearch === term) score = 0;
+      else if (site.nameSearch.startsWith(term)) score = 1;
+      else if (site.idSearch.startsWith(term)) score = 2;
+      else if (site.nameSearch.includes(term)) score = 3;
+      else if (site.idSearch.includes(term)) score = 4;
+
+      return { site, score };
+    })
+    .filter((entry) => entry.score < 99)
+    .sort((a, b) => a.score - b.score || a.site.name.localeCompare(b.site.name))
+    .slice(0, limit)
+    .map(({ site }) => ({ id: site.id, name: site.name }));
+}
+
+function loadAddressIndex() {
+  if (cachedAddressIndex) return cachedAddressIndex;
+
+  const candidatePaths = [
+    path.join(process.cwd(), "addresses.json"),
+    path.join(process.cwd(), "netlify", "data", "addresses.json"),
+    path.join(__dirname, "..", "data", "addresses.json"),
+    path.join(__dirname, "..", "..", "addresses.json"),
+    "/var/task/addresses.json",
+    "/var/task/netlify/data/addresses.json"
+  ];
+
+  let raw = null;
+  let usedPath = null;
+
+  for (const candidate of candidatePaths) {
+    try {
+      raw = fs.readFileSync(candidate, "utf8");
+      usedPath = candidate;
+      break;
+    } catch (_) {
+      // Try the next runtime path.
+    }
+  }
+
+  if (!raw) {
+    throw new Error(`Addresses file not found. Tried: ${candidatePaths.join(" | ")}`);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Invalid JSON in ${usedPath}: ${error.message}`);
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("Addresses root must be an array");
+  }
+
+  const siteMap = loadSiteMap();
+
+  cachedAddressIndex = parsed
+    .map((entry) => {
+      const id = String(entry?.site_id || "").trim();
+      const name = String(entry?.site_name || id).trim();
+      const address = String(entry?.address || "").trim();
+      return {
+        id,
+        name,
+        address,
+        addressSearch: address.toLowerCase(),
+        addressCompact: address.toLowerCase().replace(/[^a-z0-9]/g, "")
+      };
+    })
+    .filter((site) => site.id && site.address && Object.prototype.hasOwnProperty.call(siteMap, site.id))
+    .sort((a, b) => a.address.localeCompare(b.address));
+
+  return cachedAddressIndex;
+}
+
+function searchAddresses(query, limit = 20) {
+  const term = String(query || "").trim().toLowerCase();
+  const compactTerm = term.replace(/[^a-z0-9]/g, "");
+  if (term.length < 2) return [];
+
+  return loadAddressIndex()
+    .map((site) => {
+      let score = 99;
+
+      if (site.addressSearch === term) score = 0;
+      else if (site.addressSearch.startsWith(term)) score = 1;
+      else if (site.addressSearch.includes(term)) score = 2;
+      else if (compactTerm.length >= 2 && site.addressCompact.includes(compactTerm)) score = 3;
+
+      return { site, score };
+    })
+    .filter((entry) => entry.score < 99)
+    .sort((a, b) => a.score - b.score || a.site.address.localeCompare(b.site.address))
+    .slice(0, limit)
+    .map(({ site }) => ({ id: site.id, name: site.name, address: site.address }));
+}
+
+function sanitizeMachines(machines) {
+  return (Array.isArray(machines) ? machines : [])
+    .filter((machine) => machine && typeof machine === "object")
+    .map((machine) => {
+      const type = String(machine.type || "").toLowerCase().trim();
+      const id = String(machine.id || "").trim();
+      const name = String(machine.name || "").trim();
+      const bluetoothName = String(machine.bluetoothName || "").trim();
+      const hasPassword = Boolean(String(machine.password || "").trim());
+
+      let cycles = {};
+      if (
+        machine.cycles &&
+        typeof machine.cycles === "object" &&
+        !Array.isArray(machine.cycles)
+      ) {
+        cycles = Object.fromEntries(
+          Object.entries(machine.cycles).map(([key, value]) => [
+            String(key),
+            String(value)
+          ])
+        );
+      }
+
+      return { id, name, bluetoothName, type, cycles, hasPassword };
+    })
+    .filter(
+      (machine) =>
+        machine.id &&
+        machine.name &&
+        machine.bluetoothName &&
+        machine.hasPassword &&
+        (machine.type === "washer" || machine.type === "dryer")
+    )
+    .map(({ hasPassword, ...machine }) => machine);
+}
+
+const WASHER_CYCLE_PULSES = {
+  standardEco: 1,
+  extraWash: 2,
+  extraWashRinse: 3,
+  standard: 1,
+  extra: 2,
+  extraRinse: 3,
+  full: 3
+};
+
+const DEFAULT_WASHER_CYCLES = {
+  standardEco: "Standard Eco",
+  extraWash: "Extra Wash",
+  extraWashRinse: "Extra Wash + Rinse"
+};
+function hex(value, width) {
+  return Number(value).toString(16).toUpperCase().padStart(width, "0");
+}
+
+function getMachineKey(machine) {
+  return String(machine?.id || machine?.name || "").trim();
+}
+
+function getMachineCycles(machine) {
+  const configuredCycles = (
+    machine?.cycles &&
+    typeof machine.cycles === "object" &&
+    !Array.isArray(machine.cycles)
+  )
+    ? machine.cycles
+    : {};
+
+  if (
+    String(machine?.type || "").toLowerCase().trim() === "washer" &&
+    Object.keys(configuredCycles).length === 1 &&
+    configuredCycles.full
+  ) {
+    return DEFAULT_WASHER_CYCLES;
+  }
+
+  return configuredCycles;
+}
+
+function findMachineForActivation(machines, machineId) {
+  const requestedId = String(machineId || "").trim();
+  if (!requestedId) return null;
+
+  return (Array.isArray(machines) ? machines : [])
+    .filter((machine) => machine && typeof machine === "object")
+    .find((machine) => getMachineKey(machine) === requestedId) || null;
+}
+
+function getActivateCommand(machine, cycleKey) {
+  const type = String(machine?.type || "").toLowerCase().trim();
+  const password = String(machine?.password || "").trim();
+  const key = String(cycleKey || "").trim();
+  const cycles = getMachineCycles(machine);
+
+  if (!password || !Object.prototype.hasOwnProperty.call(cycles, key)) {
+    return "";
+  }
+
+  if (type === "washer") {
+    const pulses = WASHER_CYCLE_PULSES[key];
+    if (!pulses) return "";
+    return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00000032:${hex(pulses, 4)}:${password}]`;
+  }
+
+  if (type === "dryer") {
+    if (key === "full") {
+      return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00000032:0004:${password}]`;
+    }
+    if (key === "min15") {
+      return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00:0001:${password}]`;
+    }
+  }
+
+  return "";
+}
+
+function getWeekStartUTC(date = new Date()) {
+  const value = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  );
+  const day = value.getUTCDay();
+  value.setUTCDate(value.getUTCDate() - ((day + 6) % 7));
+  return value.toISOString().slice(0, 10);
+}
+
+function safeTextEqual(a, b) {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function isAdminCode(code) {
+  const configured = String(process.env.ADMIN_ACCESS_CODE || "").trim();
+  return Boolean(configured) && safeTextEqual(String(code || "").trim(), configured);
+}
+
+function validNewCode(code) {
+  return code.length >= 1 && code.length <= 64;
+}
+
+async function ensureUsageSchema() {
+  if (usageSchemaReady) return;
+  await pool.query(`
+    create table if not exists access_codes (
+      code text primary key,
+      site_id text not null,
+      active boolean not null default true,
+      weekly_limit integer not null default 4,
+      expires_at timestamptz,
+      created_at timestamptz not null default now(),
+      max_total_uses integer,
+      delete_after_use boolean not null default false,
+      deleted_at timestamptz,
+      source text
+    )
+  `);
+  await pool.query(`
+    alter table access_codes
+      add column if not exists weekly_limit integer not null default 4,
+      add column if not exists expires_at timestamptz,
+      add column if not exists created_at timestamptz not null default now(),
+      add column if not exists max_total_uses integer,
+      add column if not exists delete_after_use boolean not null default false,
+      add column if not exists deleted_at timestamptz,
+      add column if not exists source text
+  `);
+  await pool.query(`
+    update access_codes
+    set expires_at = created_at + interval '1 year'
+    where expires_at is null and source = 'payment'
+  `);
+  await pool.query(`
+    create table if not exists code_usage_weekly (
+      code text not null references access_codes(code) on delete cascade,
+      week_start date not null,
+      login_count integer not null default 0,
+      first_used_at timestamptz,
+      last_used_at timestamptz,
+      primary key (code, week_start)
+    )
+  `);
+  await pool.query(`
+    alter table code_usage_weekly
+      add column if not exists first_used_at timestamptz
+  `);
+  await pool.query(`
+    create table if not exists activation_upgrade_orders (
+      order_id text primary key,
+      stripe_session_id text unique,
+      access_code text not null references access_codes(code) on delete cascade,
+      bonus_activations integer not null default 2,
+      amount numeric(10, 2) not null default 10,
+      currency varchar(3) not null default 'GBP',
+      status text not null default 'CREATED',
+      week_start date,
+      created_at timestamptz not null default now(),
+      completed_at timestamptz
+    )
+  `);
+  await pool.query(`create index if not exists activation_upgrade_code_week_idx on activation_upgrade_orders(access_code, week_start, status)`);
+  usageSchemaReady = true;
+}
+
+function getNextWeekStartUTC(date = new Date()) {
+  const current = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = current.getUTCDay();
+  const daysUntilMonday = (8 - day) % 7 || 7;
+  current.setUTCDate(current.getUTCDate() + daysUntilMonday);
+  return current.toISOString();
+}
+
+async function getWeeklyUsage(code, weeklyLimit, maxTotalUses = null) {
+  const weekStart = getWeekStartUTC();
+  const bonus = await getActivationUpgradeBonus(code, weekStart);
+  const { rows } = await pool.query(
+    `
+      select
+        coalesce(sum(login_count), 0)::int as total_uses,
+        coalesce(sum(login_count) filter (where week_start = $2::date), 0)::int as weekly_uses,
+        max(last_used_at) as last_used_at
+      from code_usage_weekly
+      where code = $1
+    `,
+    [code, weekStart]
+  );
+  const used = Number(rows[0]?.weekly_uses || 0);
+  const totalUsed = Number(rows[0]?.total_uses || 0);
+  const baseLimit = Number.isInteger(Number(weeklyLimit)) && Number(weeklyLimit) > 0 ? Number(weeklyLimit) : 4;
+  const limit = baseLimit + bonus;
+  const totalLimit = Number.isInteger(Number(maxTotalUses)) && Number(maxTotalUses) > 0 ? Number(maxTotalUses) : null;
+  const weeklyRemaining = Math.max(0, limit - used);
+  const totalRemaining = totalLimit ? Math.max(0, totalLimit - totalUsed) : weeklyRemaining;
+  return {
+    used,
+    limit,
+    baseLimit,
+    bonus,
+    totalUsed,
+    totalLimit,
+    remaining: Math.min(weeklyRemaining, totalRemaining),
+    resetAt: getNextWeekStartUTC(),
+    lastUsedAt: rows[0]?.last_used_at || null
+  };
+}
+
+async function consumeWeeklyUsage(code, weeklyLimit, maxTotalUses = null, deleteAfterUse = false) {
+  const weekStart = getWeekStartUTC();
+  const baseLimit = Number.isInteger(Number(weeklyLimit)) && Number(weeklyLimit) > 0 ? Number(weeklyLimit) : 4;
+  const bonus = await getActivationUpgradeBonus(code, weekStart);
+  const limit = baseLimit + bonus;
+  const totalLimit = Number.isInteger(Number(maxTotalUses)) && Number(maxTotalUses) > 0
+    ? Number(maxTotalUses)
+    : (deleteAfterUse ? 1 : null);
+  if (totalLimit) {
+    const current = await getWeeklyUsage(code, baseLimit, totalLimit);
+    if (Number(current.totalUsed || 0) >= totalLimit) return { allowed: false, ...current };
+  }
+  const { rows } = await pool.query(
+    `
+      insert into code_usage_weekly (code, week_start, login_count, first_used_at, last_used_at)
+      values ($1, $2::date, 1, now(), now())
+      on conflict (code, week_start)
+      do update set
+        first_used_at = coalesce(code_usage_weekly.first_used_at, code_usage_weekly.last_used_at, now()),
+        login_count = code_usage_weekly.login_count + 1,
+        last_used_at = now()
+      where code_usage_weekly.login_count < $3
+      returning login_count, last_used_at
+    `,
+    [code, weekStart, limit]
+  );
+  if (!rows[0]) {
+    const usage = await getWeeklyUsage(code, baseLimit, totalLimit);
+    return { allowed: false, ...usage };
+  }
+  const used = Number(rows[0].login_count || 0);
+  const usage = await getWeeklyUsage(code, baseLimit, totalLimit);
+  if (deleteAfterUse && Number(usage.totalUsed || 0) >= Number(totalLimit || 1)) {
+    await pool.query(
+      `update access_codes set active = false, deleted_at = coalesce(deleted_at, now()) where code = $1`,
+      [code]
+    );
+  }
+  return {
+    allowed: true,
+    ...usage,
+    used,
+    limit,
+    baseLimit,
+    bonus,
+    resetAt: getNextWeekStartUTC(),
+    lastUsedAt: rows[0].last_used_at || null
+  };
+}
+
+async function getActivationUpgradeBonus(code, weekStart = getWeekStartUTC()) {
+  const { rows } = await pool.query(
+    `
+      select coalesce(sum(bonus_activations), 0)::int as bonus
+      from activation_upgrade_orders
+      where access_code = $1
+        and week_start = $2::date
+        and status = 'COMPLETED'
+    `,
+    [code, weekStart]
+  );
+  return Number(rows[0]?.bonus || 0);
+}
+
+function isExpired(mapping) {
+  if (!mapping?.expires_at) return false;
+  const expiry = new Date(mapping.expires_at);
+  return !Number.isNaN(expiry.getTime()) && expiry.getTime() <= Date.now();
+}
+
+async function findAccessCode(code) {
+  const query = `
+    select code, site_id, active, weekly_limit, max_total_uses, delete_after_use, expires_at
+    from access_codes
+    where code = $1
+      and deleted_at is null
+    limit 1
+  `;
+  const { rows } = await pool.query(query, [code]);
+  return rows[0] || null;
+}
+
+async function addAccessCode(code, siteId) {
+  const query = `
+    insert into access_codes (code, site_id, active, weekly_limit)
+    values ($1, $2, true, 4)
+    on conflict (code) do nothing
+    returning code
+  `;
+  const { rows } = await pool.query(query, [code, siteId]);
+  return Boolean(rows[0]);
+}
+
+async function getStoreAccess(laundryAccessCode) {
+  try {
+    await ensureStoreSchema(pool);
+    const result = await pool.query(`
+      select access_code, popup_enabled, popup_claimed_at
+      from store_members
+      where laundry_access_code = $1
+        and active = true
+      limit 1
+    `, [laundryAccessCode]);
+    const storeCode = result.rows[0]?.access_code;
+    if (!storeCode) return { storeAccess: null, storeInvite: null };
+    const storeAccess = {
+      code: storeCode,
+      url: `/store.html?code=${encodeURIComponent(storeCode)}`
+    };
+    const showPopup = Boolean(result.rows[0]?.popup_enabled) && !result.rows[0]?.popup_claimed_at;
+    return { storeAccess, storeInvite: showPopup ? storeAccess : null };
+  } catch (error) {
+    console.warn("[login] store access lookup failed:", error?.message || error);
+    return { storeAccess: null, storeInvite: null };
+  }
+}
+
+exports.handler = async (event) => {
+  try {
+    if (event.httpMethod !== "POST") {
+      return text("Method Not Allowed", 405);
+    }
+
+    let body = {};
+    try {
+      body = event.body ? JSON.parse(event.body) : {};
+    } catch (_) {
+      return json({ ok: false, error: "bad_request" }, 400);
+    }
+
+    const action = String(body.action || "login").trim();
+
+    if (action === "search_sites") {
+      const adminCode = String(body.adminCode || "").trim();
+      const query = String(body.query || "").trim();
+      const searchMode = body.searchMode === "address" ? "address" : "config";
+
+      if (!isAdminCode(adminCode)) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+
+      if (query.length < 2 || query.length > 100) {
+        return json({ ok: false, error: "invalid_query" }, 400);
+      }
+
+      const sites = searchMode === "address"
+        ? searchAddresses(query)
+        : searchSites(query);
+
+      return json({ ok: true, searchMode, sites }, 200);
+    }
+
+    if (action === "add_access_code") {
+      await ensureUsageSchema();
+      const adminCode = String(body.adminCode || "").trim();
+      const newCode = String(body.code || "").trim();
+      const siteId = String(body.siteId || "").trim();
+      const siteMap = loadSiteMap();
+
+      if (!isAdminCode(adminCode)) {
+        return json({ ok: false, error: "unauthorized" }, 401);
+      }
+
+      if (!validNewCode(newCode) || isAdminCode(newCode)) {
+        return json({ ok: false, error: "invalid_code" }, 400);
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(siteMap, siteId)) {
+        return json({ ok: false, error: "invalid_site" }, 400);
+      }
+
+      const inserted = await addAccessCode(newCode, siteId);
+      if (!inserted) {
+        return json({ ok: false, error: "code_exists" }, 409);
+      }
+
+      return json({ ok: true, code: newCode, siteId }, 201);
+    }
+
+    const code = String(body.code || "").trim();
+    if (!code) {
+      return json({ ok: false, error: "missing_code" }, 400);
+    }
+
+    await ensureUsageSchema();
+    const mapping = await findAccessCode(code);
+    if (!mapping || mapping.active !== true) {
+      return json({ ok: false, error: "unknown_code" }, 404);
+    }
+    if (isExpired(mapping)) {
+      return json({ ok: false, error: "expired_code", expiresAt: mapping.expires_at }, 410);
+    }
+
+    const weeklyLimit = Number(mapping.weekly_limit || 4);
+    const maxTotalUses = Number(mapping.max_total_uses || 0) || null;
+    const deleteAfterUse = Boolean(mapping.delete_after_use);
+    if (action === "change_site") {
+      const siteId = String(body.siteId || "").trim();
+      const siteMap = loadSiteMap();
+      const entry = siteMap[siteId];
+      if (!entry || typeof entry !== "object") {
+        return json({ ok: false, error: "invalid_site" }, 400);
+      }
+      await pool.query(`
+        update access_codes
+        set site_id = $2
+        where code = $1 and active = true and deleted_at is null
+      `, [code, siteId]);
+      const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null));
+      return json({
+        ok: true,
+        siteId,
+        siteName: String(entry.siteName || "Site"),
+        machines: sanitizeMachines(entry.machines),
+        weeklyLimit: usage.limit,
+        weeklyBaseLimit: usage.baseLimit,
+        weeklyBonus: usage.bonus,
+        weeklyUsed: usage.used,
+        weeklyRemaining: usage.remaining,
+        weeklyResetAt: usage.resetAt,
+        totalUsed: usage.totalUsed,
+        totalLimit: usage.totalLimit,
+        deleteAfterUse
+      }, 200);
+    }
+    if (action === "usage_status") {
+      const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null));
+      return json({ ok: true, ...usage, deleteAfterUse }, 200);
+    }
+
+    if (action === "consume_usage" || action === "increment_usage") {
+      const usage = await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, deleteAfterUse);
+      if (usage.allowed === false) {
+        return json({ ok: false, error: "weekly_limit_reached", ...usage }, 429);
+      }
+      return json({ ok: true, ...usage }, 200);
+    }
+
+    if (action === "complete_activation") {
+      if (!deleteAfterUse) {
+        const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses);
+        return json({ ok: true, ...usage, deleteAfterUse }, 200);
+      }
+      const usage = await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, deleteAfterUse);
+      if (!usage.allowed) {
+        return json({ ok: false, error: "weekly_limit_reached", ...usage, deleteAfterUse }, 429);
+      }
+      return json({ ok: true, ...usage, deleteAfterUse }, 200);
+    }
+
+    if (action === "prepare_activation") {
+      const siteMap = loadSiteMap();
+      const entry = siteMap[mapping.site_id];
+      const machineId = String(body.machineId || "").trim();
+      const cycleKey = String(body.cycleKey || "").trim();
+
+      if (!entry || typeof entry !== "object") {
+        console.error(`[login] site_id not found in access-config.json: ${mapping.site_id}`);
+        return json({ ok: false, error: "site_not_configured" }, 500);
+      }
+
+      const machine = findMachineForActivation(entry.machines, machineId);
+      const activationCommand = machine ? getActivateCommand(machine, cycleKey) : "";
+
+      if (!activationCommand) {
+        return json({ ok: false, error: "invalid_machine_or_cycle" }, 400);
+      }
+
+      const usage = deleteAfterUse
+        ? await getWeeklyUsage(code, weeklyLimit, maxTotalUses || 1)
+        : await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, false);
+      if (usage.allowed === false) {
+        return json({ ok: false, error: "weekly_limit_reached", ...usage }, 429);
+      }
+      if (deleteAfterUse && Number(usage.remaining || 0) <= 0) {
+        return json({ ok: false, error: "weekly_limit_reached", ...usage, deleteAfterUse }, 429);
+      }
+
+      return json({
+        ok: true,
+        machineId: getMachineKey(machine),
+        cycleKey,
+        activationCommand,
+        limit: usage.limit,
+        baseLimit: usage.baseLimit,
+        bonus: usage.bonus,
+        used: usage.used,
+        remaining: usage.remaining,
+        resetAt: usage.resetAt,
+        totalUsed: usage.totalUsed,
+        totalLimit: usage.totalLimit,
+        deleteAfterUse
+      }, 200);
+    }
+
+    const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null));
+    const siteMap = loadSiteMap();
+    const entry = siteMap[mapping.site_id];
+
+    if (!entry || typeof entry !== "object") {
+      console.error(`[login] site_id not found in access-config.json: ${mapping.site_id}`);
+      return json({ ok: false, error: "site_not_configured" }, 500);
+    }
+
+    const { storeAccess, storeInvite } = await getStoreAccess(code);
+
+    return json(
+      {
+        ok: true,
+        siteName: String(entry.siteName || "Site"),
+        machines: sanitizeMachines(entry.machines),
+        expiresAt: mapping.expires_at || null,
+        weeklyLimit: usage.limit,
+        weeklyBaseLimit: usage.baseLimit,
+        weeklyBonus: usage.bonus,
+        weeklyUsed: usage.used,
+        weeklyRemaining: usage.remaining,
+        weeklyResetAt: usage.resetAt,
+        totalUsed: usage.totalUsed,
+        totalLimit: usage.totalLimit,
+        deleteAfterUse,
+        storeAccess,
+        storeInvite
+      },
+      200
+    );
+  } catch (error) {
+    console.error("[login] fatal:", error?.stack || error);
+    return text("Server error", 500);
+  }
+};
+
+function json(value, statusCode = 200) {
+  return {
+    statusCode,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate, private",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    body: JSON.stringify(value)
+  };
+}
+
+function text(body, statusCode = 200) {
+  return {
+    statusCode,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, max-age=0, must-revalidate, private",
+      "Pragma": "no-cache",
+      "Expires": "0"
+    },
+    body
+  };
+}

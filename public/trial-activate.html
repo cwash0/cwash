@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Free Trial Activation - CircuitWash</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/activate.css?v=machine-panel-compact-2" />
+  <link rel="stylesheet" href="assets/trial-activate.css?v=completion-screen-2" />
+</head>
+<body>
+  <div id="trialActivateRoot">
+    <main class="app-shell">
+      <header class="app-header">
+        <a class="app-brand" href="/" aria-label="Back to CircuitWash home">
+          <span class="app-back" aria-hidden="true">←</span>
+          <span class="app-brand-mark" aria-hidden="true"><i></i></span>
+          <strong>Circuit<span>Wash</span></strong>
+        </a>
+        <span id="trialPill" class="trial-pill">1 free start</span>
+        <div class="location-summary">
+          <div><span class="location-label">Laundry room</span><h1 id="trialSiteTitle">Loading...</h1></div>
+          <button id="changeTrialSiteBtn" class="activation-change-site" type="button" aria-label="Change site" title="Change site">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 20h16"></path>
+              <path d="M14.5 4.5 19.5 9.5 9 20H4v-5z"></path>
+              <path d="m13 6 5 5"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div id="trialLoading" class="trial-page-state">
+        <span class="state-spinner" aria-hidden="true"></span>
+        <strong>Loading...</strong>
+      </div>
+
+      <div id="trialError" class="trial-page-state hidden" aria-live="polite">
+        <strong id="trialErrorTitle">Activation could not be loaded.</strong>
+        <p id="trialErrorText">Return to the free-trial page and try again.</p>
+        <div class="trial-state-actions">
+          <a class="btn-primary" href="/trial.html">Back</a>
+          <a class="btn-secondary" href="/pay.html">Buy a code</a>
+        </div>
+      </div>
+
+      <section id="trialOutcome" class="activation-outcome hidden" data-state="pending" aria-live="polite" aria-labelledby="trialOutcomeTitle">
+        <div class="outcome-primary">
+          <div class="success-visual" aria-hidden="true">
+            <span class="success-aura"></span>
+            <span class="outcome-status-icon">
+              <span class="outcome-check">
+                <svg viewBox="0 0 32 32"><path pathLength="1" d="m8.5 16.7 5 5 10-11"></path></svg>
+              </span>
+              <span class="state-spinner"></span>
+            </span>
+            <span class="success-machine-icon">
+              <svg viewBox="0 0 32 32"><rect x="7" y="4.5" width="18" height="23" rx="4"></rect><path d="M7 10h18"></path><circle cx="11" cy="7.3" r=".8"></circle><circle cx="16" cy="19" r="5.5"></circle><path d="M12.5 18.3c1.8-1.4 3.6 1.3 5.7-.2"></path></svg>
+            </span>
+          </div>
+          <h2 id="trialOutcomeTitle">Sending start to your machine&hellip;</h2>
+          <p id="trialOutcomeCycle" class="outcome-cycle"></p>
+          <p id="trialOutcomeReassurance" class="outcome-reassurance">Keep this page open while CircuitWash confirms the activation.</p>
+        </div>
+
+        <div id="trialCompletionStatus" class="trial-completion-status hidden">
+          <span>Free activation complete</span>
+        </div>
+
+        <aside id="trialAccessOffer" class="continuation-panel hidden" aria-labelledby="trialOfferTitle">
+          <p class="continuation-kicker">For next time</p>
+          <h3 id="trialOfferTitle">Want to use CircuitWash again?</h3>
+          <p id="trialOfferCopy" class="continuation-copy">Get 1-year access for this laundry room whenever you need another wash.</p>
+          <a id="trialPurchaseCta" class="btn-primary continuation-cta" href="/pay.html">Get 1-year access <span aria-hidden="true">&rarr;</span></a>
+          <a class="continuation-dismiss" href="/">Maybe later</a>
+        </aside>
+
+        <div id="trialOutcomeActions" class="trial-state-actions hidden">
+          <button id="trialOutcomeRetry" class="btn-primary" type="button">Try again</button>
+          <a id="trialOutcomeDone" class="btn-secondary" href="/">Done</a>
+        </div>
+      </section>
+
+      <section id="trialControls" class="control-stack hidden" aria-label="Free activation machine controls">
+          <article class="control-panel machine-panel" aria-labelledby="trialMachineRegionTitle">
+            <div class="panel-heading"><span class="section-kicker">Machine</span><h2 id="trialMachineRegionTitle" class="visually-hidden">Choose a machine</h2></div>
+            <div id="trialDeviceMap" class="machine-map"><div class="machine-empty">No machines loaded yet.</div></div>
+          </article>
+
+          <article id="trialConnectionModule" class="control-panel connection-panel" data-state="ready" aria-labelledby="trialConnectionTitle">
+            <div class="ble-visual" aria-hidden="true">
+              <span class="signal-ring signal-ring-one"></span><span class="signal-ring signal-ring-two"></span><span class="signal-ring signal-ring-three"></span>
+              <span class="ble-machine-icon"><svg class="connection-symbol" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="2.2"></circle><path d="M11.7 20.3a6.1 6.1 0 0 1 0-8.6M20.3 11.7a6.1 6.1 0 0 1 0 8.6M8.4 23.6a10.8 10.8 0 0 1 0-15.2M23.6 8.4a10.8 10.8 0 0 1 0 15.2"></path></svg><i class="ble-check"></i></span>
+            </div>
+            <div class="connection-copy">
+              <div id="trialStatus" class="status-pill" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span>Ready to activate</span></div>
+              <h2 id="trialConnectionTitle">Ready to activate</h2>
+            </div>
+            <button id="trialConnectBtn" class="btn-primary connect-button" type="button" disabled>Activate machine <span aria-hidden="true">→</span></button>
+
+            <div class="connection-meta">
+              <div id="trialInUseNotice" class="in-use-notice hidden"></div>
+              <div id="trialAllowanceText" class="usage-notice trial-allowance">1 free activation remaining</div>
+              <a class="connection-help-link" href="mailto:support@circuitwash.com?subject=CircuitWash%20free%20activation%20connection%20help">Connection help</a>
+            </div>
+          </article>
+
+          <article id="trialCycleSection" class="control-panel cycle-panel is-locked" aria-labelledby="trialCycleTitle">
+            <div class="panel-heading cycle-heading"><div><span class="section-kicker">Cycle</span><h2 id="trialCycleTitle">Choose a cycle</h2></div><span class="cycle-state" aria-hidden="true"></span></div>
+            <p id="trialCycleHint" class="cycle-hint hidden"></p>
+            <div id="trialMachineButtons" class="machine-actions"></div>
+          </article>
+
+        <article class="log-card visually-hidden">
+          <div id="trialActivity" class="activity-strip" aria-live="polite">
+            <span class="activity-dot" aria-hidden="true"></span>
+            <span id="trialActivityText" class="activity-text">Ready</span>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div id="trialMachinePickerOverlay" class="machine-picker-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="trialMachinePickerTitle">
+    <div class="machine-picker-backdrop" data-close-trial-machine-picker></div>
+    <section class="machine-picker-sheet">
+      <div class="machine-picker-handle" aria-hidden="true"></div>
+      <header class="machine-picker-head">
+        <h2 id="trialMachinePickerTitle">Choose a machine</h2>
+        <button id="closeTrialMachinePickerBtn" type="button" aria-label="Close machine picker">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"></path><path d="M18 6 6 18"></path></svg>
+        </button>
+      </header>
+      <div id="trialMachinePickerList" class="machine-picker-list" role="listbox" aria-label="Available machines"></div>
+    </section>
+  </div>
+
+  <div class="bluefy-overlay hidden" data-ios-bluefy role="dialog" aria-modal="true" aria-labelledby="trialBluefyTitle" aria-describedby="trialBluefyText trialBluefyExplanation">
+    <div class="bluefy-card">
+      <button class="bluefy-close" type="button" data-ios-bluefy-dismiss aria-label="Close Bluefy notice">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12"></path>
+          <path d="M18 6L6 18"></path>
+        </svg>
+      </button>
+      <strong id="trialBluefyTitle" class="bluefy-title">Almost ready to connect</strong>
+      <p id="trialBluefyText" class="bluefy-primary">Open this page in <b>Bluefy</b> to start <b data-ios-bluefy-machine>this machine</b>.</p>
+      <p id="trialBluefyExplanation" class="bluefy-explanation">Bluefy is a free browser that lets this page connect over Bluetooth.</p>
+      <a class="bluefy-link" href="https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055" data-bluefy-open>Get Bluefy &rarr;</a>
+    </div>
+  </div>
+
+  <div class="bluefy-copy-toast" data-bluefy-copy-toast role="status" aria-live="polite" aria-atomic="true" aria-hidden="true">
+    <span class="bluefy-copy-toast-check" aria-hidden="true">&#10003;</span>
+    <span class="bluefy-copy-toast-text"><strong>Link copied</strong><small>Opening App Store&hellip;</small></span>
+  </div>
+
+  <div id="trialSiteModal" class="change-site-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="trialSiteModalTitle">
+    <div class="change-site-dialog">
+      <div class="change-site-head">
+        <div class="change-site-title">
+          <h2 id="trialSiteModalTitle">Change site</h2>
+        </div>
+        <button id="closeTrialSiteModal" type="button">Cancel</button>
+      </div>
+      <p>Choose the site where you are using the machine.</p>
+      <div class="change-site-search-experience">
+        <div class="change-site-search-field">
+          <label class="visually-hidden" for="trialChangeSiteSearch">Search for your laundry site</label>
+          <span class="change-site-search-icon" aria-hidden="true"></span>
+          <input id="trialChangeSiteSearch" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search site, address or postcode" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="trialChangeSiteResults" />
+        </div>
+        <div id="trialChangeSiteResults" class="change-site-results hidden" role="listbox" aria-label="Matching laundry sites"></div>
+      </div>
+      <div id="trialChangeSiteMessage" class="change-site-message" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <script src="assets/trial-activate.js?v=dryer-cycle-times-1"></script>
+</body>
+</html>
