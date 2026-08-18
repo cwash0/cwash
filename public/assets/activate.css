@@ -867,9 +867,11 @@ button.is-pressed::after { opacity: 1; }
 .bluefy-card .bluefy-primary {
   color: #eef6ff;
   font-size: 16px;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.022em;
   margin-bottom: 8px;
 }
+
+.bluefy-card [data-ios-bluefy-machine] { white-space: nowrap; }
 
 .bluefy-card .bluefy-explanation {
   margin-bottom: 17px;

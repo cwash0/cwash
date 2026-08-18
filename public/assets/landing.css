@@ -36,7 +36,7 @@ svg { display: block; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 46px; padding: 11px 18px; border: 1px solid transparent; border-radius: 13px; font-size: .88rem; font-weight: 830; letter-spacing: -.01em; transition: transform .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease; }
 .button:hover, .button:focus-visible { transform: translateY(-2px); outline: none; }
 .button:active { transform: translateY(0) scale(.985); }
-.button-primary { color: #001319; background: linear-gradient(135deg, var(--cyan-bright), var(--cyan)); box-shadow: 0 10px 30px rgba(36,215,240,.2); }
+.button-primary { color: #001319; background-color: var(--cyan); background-image: linear-gradient(135deg, var(--cyan-bright), var(--cyan)); background-repeat: no-repeat; box-shadow: 0 10px 30px rgba(36,215,240,.2); }
 .button-primary:hover, .button-primary:focus-visible { box-shadow: 0 14px 38px rgba(36,215,240,.3); }
 .button-secondary { border-color: rgba(151,178,210,.2); color: #e7f9ff; background: rgba(255,255,255,.045); }
 .button-secondary:hover, .button-secondary:focus-visible { border-color: rgba(36,215,240,.4); background: rgba(36,215,240,.08); }
