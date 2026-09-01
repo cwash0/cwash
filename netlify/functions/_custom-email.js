@@ -450,14 +450,14 @@ async function resolveRecipients(pool, targeting) {
 }
 
 async function getEligibleCustomers(pool, { includeSuppressed = false } = {}) {
-  const exists = await pool.query(`select to_regclass('public.paypal_access_orders') as table_name`);
+  const exists = await pool.query(`select to_regclass('public.access_orders') as table_name`);
   const rows = exists.rows[0]?.table_name ? (await pool.query(`
       with ranked as (
         select lower(trim(o.customer_email)) as email_key, trim(o.customer_email) as customer_email,
                o.site_id, o.order_id, coalesce(o.completed_at,o.created_at) as purchased_at,
                count(*) over (partition by lower(trim(o.customer_email)))::int as purchase_count,
                row_number() over (partition by lower(trim(o.customer_email)) order by coalesce(o.completed_at,o.created_at) desc,o.order_id desc) as row_number
-        from paypal_access_orders o
+        from access_orders o
         where o.status='COMPLETED' and o.customer_email is not null and trim(o.customer_email)<>''
       )
       select r.*, s.email is not null as suppressed

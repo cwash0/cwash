@@ -8,7 +8,8 @@ let selectedPromoSite = null;
 let selectedTrialLimitSite = null;
 let siteSearchTimer = null;
 let codeFilterTimer = null;
-let supportFilter = "ALL";
+let supportFilter = "UNRESOLVED";
+let supportSearchTimer = null;
 let selectedTicketId = null;
 let feedbackData = null;
 let feedbackRecipientFilter = "";
@@ -17,15 +18,12 @@ let orderSearchTerm = "";
 let codesData = [];
 let promosData = [];
 let analyticsData = null;
+let analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
 let editingPromo = null;
 let promoFilterTimer = null;
 let promoSiteSearchTimer = null;
 let trialLimitSiteSearchTimer = null;
 let supportTicketsData = [];
-let storeData = null;
-let selectedStoreCustomerCode = "";
-let storeCustomerFilter = "";
-let editingStoreProductId = null;
 let activeDrawer = null;
 const selectedFeedbackEmails = new Set();
 const sortState = {
@@ -33,7 +31,6 @@ const sortState = {
   orders: { key: "date", direction: "desc" },
   codes: { key: "createdAt", direction: "desc" },
   promos: { key: "createdAt", direction: "desc" },
-  analyticsHits: { key: "createdAt", direction: "desc" },
   feedbackResponses: { key: "submittedAt", direction: "desc" },
   feedbackInvitations: { key: "sentAt", direction: "desc" }
 };
@@ -42,24 +39,22 @@ const $ = (id) => document.getElementById(id);
 const els = {
   loginOverlay: $("loginOverlay"), loginForm: $("loginForm"), adminCodeInput: $("adminCodeInput"), staySignedInInput: $("staySignedInInput"), loginMessage: $("loginMessage"), app: $("app"),
   refreshBtn: $("refreshBtn"), logoutBtn: $("logoutBtn"), lastUpdated: $("lastUpdated"), commandHealthText: $("commandHealthText"),
-  navOrdersBadge: $("navOrdersBadge"), navStoreBadge: $("navStoreBadge"), navSupportBadge: $("navSupportBadge"),
+  navOrdersBadge: $("navOrdersBadge"), navSupportBadge: $("navSupportBadge"),
   metricRevenue: $("metricRevenue"), metricRevenueSub: $("metricRevenueSub"), metricOrders: $("metricOrders"), metricOrdersSub: $("metricOrdersSub"),
   metricActivations: $("metricActivations"), metricSupport: $("metricSupport"), metricSupportSub: $("metricSupportSub"), trendChart: $("trendChart"),
-  recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
-  reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsWeekMetric: $("analyticsWeekMetric"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsTopSites: $("analyticsTopSites"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
+  recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), orderTypeBreakdown: $("orderTypeBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
+  reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsRange: $("analyticsRange"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsPeriodMetric: $("analyticsPeriodMetric"), analyticsPeriodSub: $("analyticsPeriodSub"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsNoOrderSub: $("analyticsNoOrderSub"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsDataQuality: $("analyticsDataQuality"), analyticsTrendSummary: $("analyticsTrendSummary"), analyticsDemandTrend: $("analyticsDemandTrend"), analyticsActivationTrend: $("analyticsActivationTrend"), analyticsTopSites: $("analyticsTopSites"), analyticsTopSearches: $("analyticsTopSearches"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), analyticsHitsPageStatus: $("analyticsHitsPageStatus"), analyticsHitsPrev: $("analyticsHitsPrev"), analyticsHitsNext: $("analyticsHitsNext"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
+  withinCityViralityMetric: $("withinCityViralityMetric"), withinCityViralitySample: $("withinCityViralitySample"), crossCityViralityMetric: $("crossCityViralityMetric"), crossCityViralitySample: $("crossCityViralitySample"), geographicViralitySummary: $("geographicViralitySummary"), geographicLocationCoverage: $("geographicLocationCoverage"), geographicViralityTrend: $("geographicViralityTrend"), geographicCityRows: $("geographicCityRows"), geographicRoutes: $("geographicRoutes"),
   ordersBody: $("ordersBody"), reloadOrdersBtn: $("reloadOrdersBtn"), orderStatusFilter: $("orderStatusFilter"), orderSearch: $("orderSearch"), clearOrderSearchBtn: $("clearOrderSearchBtn"), ordersSummary: $("ordersSummary"), cleanupCreatedHours: $("cleanupCreatedHours"), cleanupCreatedOrdersBtn: $("cleanupCreatedOrdersBtn"), ordersMessage: $("ordersMessage"), siteSearchMode: $("siteSearchMode"), adminSiteSearch: $("adminSiteSearch"),
   siteResults: $("siteResults"), selectedAdminSite: $("selectedAdminSite"), newCode: $("newCode"), newCodeWeeklyLimit: $("newCodeWeeklyLimit"), generateCodeBtn: $("generateCodeBtn"), createCodeBtn: $("createCodeBtn"),
   codeCreateMessage: $("codeCreateMessage"), codeFilter: $("codeFilter"), reloadCodesBtn: $("reloadCodesBtn"), codesBody: $("codesBody"),
   newPromoCode: $("newPromoCode"), promoDiscountType: $("promoDiscountType"), promoDiscountValue: $("promoDiscountValue"), promoMaxRedemptions: $("promoMaxRedemptions"), promoSiteSearch: $("promoSiteSearch"), promoSiteResults: $("promoSiteResults"), selectedPromoSite: $("selectedPromoSite"), promoFreeSite: $("promoFreeSite"), promoOneTimeUse: $("promoOneTimeUse"), promoOneTimeAccess: $("promoOneTimeAccess"), createPromoBtn: $("createPromoBtn"), promoCreateMessage: $("promoCreateMessage"), promoFilter: $("promoFilter"), reloadPromosBtn: $("reloadPromosBtn"), promosBody: $("promosBody"),
   freeTrialEnabledInput: $("freeTrialEnabledInput"), freeTrialEnabledStatus: $("freeTrialEnabledStatus"), freeTrialIssuedMetric: $("freeTrialIssuedMetric"), freeTrialActivatedMetric: $("freeTrialActivatedMetric"), freeTrialWaitingMetric: $("freeTrialWaitingMetric"), freeTrialRateMetric: $("freeTrialRateMetric"), freeTrialRows: $("freeTrialRows"), reloadFreeTrialsBtn: $("reloadFreeTrialsBtn"), freeTrialMessage: $("freeTrialMessage"), trialLimitSiteSearch: $("trialLimitSiteSearch"), trialLimitSiteResults: $("trialLimitSiteResults"), selectedTrialLimitSite: $("selectedTrialLimitSite"), trialWeeklyLimitInput: $("trialWeeklyLimitInput"), saveTrialLimitBtn: $("saveTrialLimitBtn"), clearTrialLimitBtn: $("clearTrialLimitBtn"), freeTrialLimitRows: $("freeTrialLimitRows"),
   promoEditOverlay: $("promoEditOverlay"), promoEditCode: $("promoEditCode"), promoEditDiscountType: $("promoEditDiscountType"), promoEditDiscountValue: $("promoEditDiscountValue"), promoEditMaxRedemptions: $("promoEditMaxRedemptions"), promoEditOneTimeUse: $("promoEditOneTimeUse"), promoEditOneTimeAccess: $("promoEditOneTimeAccess"), promoEditMessage: $("promoEditMessage"), closePromoEditBtn: $("closePromoEditBtn"), cancelPromoEditBtn: $("cancelPromoEditBtn"), savePromoEditBtn: $("savePromoEditBtn"),
-  reloadStoreBtn: $("reloadStoreBtn"), storeMembersMetric: $("storeMembersMetric"), storeMembersSub: $("storeMembersSub"), storeProductsMetric: $("storeProductsMetric"), storeRevenueMetric: $("storeRevenueMetric"), storeRevenueSub: $("storeRevenueSub"), storeFulfilmentMetric: $("storeFulfilmentMetric"),
-  storeEligibleCustomerCount: $("storeEligibleCustomerCount"), storeCustomerListCount: $("storeCustomerListCount"), storeCustomerFilter: $("storeCustomerFilter"), storeClearCustomerFilterBtn: $("storeClearCustomerFilterBtn"), storeCustomerList: $("storeCustomerList"), storeSelectedCustomer: $("storeSelectedCustomer"), storeInviteDelivery: $("storeInviteDelivery"), storeInviteDeliveryOptions: $("storeInviteDeliveryOptions"), storeMemberInviteLimit: $("storeMemberInviteLimit"), createStoreMemberBtn: $("createStoreMemberBtn"), storeMemberResult: $("storeMemberResult"), storeMemberMessage: $("storeMemberMessage"), storeMembersBody: $("storeMembersBody"),
-  storeProductFormTitle: $("storeProductFormTitle"), storeProductName: $("storeProductName"), storeProductPrice: $("storeProductPrice"), storeProductDescription: $("storeProductDescription"), storeProductImageUrl: $("storeProductImageUrl"), storeProductSortOrder: $("storeProductSortOrder"), storeProductImagePreview: $("storeProductImagePreview"), storeProductActive: $("storeProductActive"), cancelStoreProductEditBtn: $("cancelStoreProductEditBtn"), saveStoreProductBtn: $("saveStoreProductBtn"), storeProductMessage: $("storeProductMessage"), storeProductList: $("storeProductList"), storeCleanupStaleOrdersBtn: $("storeCleanupStaleOrdersBtn"), storeCleanupMessage: $("storeCleanupMessage"), storeOrdersList: $("storeOrdersList"),
   reloadFeedbackBtn: $("reloadFeedbackBtn"), feedbackEnabledInput: $("feedbackEnabledInput"), feedbackEnabledStatus: $("feedbackEnabledStatus"), feedbackManualEmails: $("feedbackManualEmails"), feedbackRecipientFilter: $("feedbackRecipientFilter"), feedbackRecipientList: $("feedbackRecipientList"),
   selectVisibleRecipientsBtn: $("selectVisibleRecipientsBtn"), clearRecipientsBtn: $("clearRecipientsBtn"), feedbackSelectionCount: $("feedbackSelectionCount"), sendFeedbackBtn: $("sendFeedbackBtn"), feedbackSendMessage: $("feedbackSendMessage"),
   feedbackResponsesMetric: $("feedbackResponsesMetric"), feedbackResponseRate: $("feedbackResponseRate"), feedbackRatingMetric: $("feedbackRatingMetric"), feedbackRecommendMetric: $("feedbackRecommendMetric"), feedbackInvitesMetric: $("feedbackInvitesMetric"), feedbackInvitesSub: $("feedbackInvitesSub"), feedbackDistribution: $("feedbackDistribution"), feedbackResponsesBody: $("feedbackResponsesBody"), feedbackInvitationsBody: $("feedbackInvitationsBody"),
-  reloadSupportBtn: $("reloadSupportBtn"), supportSort: $("supportSort"), ticketList: $("ticketList"), supportDetail: $("supportDetail")
+  reloadSupportBtn: $("reloadSupportBtn"), supportSearch: $("supportSearch"), supportSort: $("supportSort"), ticketList: $("ticketList"), supportDetail: $("supportDetail")
 };
 
 function getStoredAdminCode() {
@@ -136,7 +131,6 @@ const NAV_GROUPS = {
   dashboard: "command",
   orders: "operations",
   codes: "operations",
-  store: "operations",
   support: "customers",
   feedback: "customers",
   email: "customers",
@@ -188,7 +182,6 @@ function openTab(tab) {
   if (tab === "orders") loadOrders();
   if (tab === "codes") loadCodes();
   if (tab === "promos") loadPromos();
-  if (tab === "store") loadStore();
   if (tab === "feedback") loadFeedback();
   if (tab === "email" && typeof window.loadEmailCenter === "function") window.loadEmailCenter();
   if (tab === "support") loadSupport();
@@ -200,7 +193,6 @@ async function refreshActive() {
   else if (activeTab === "orders") await loadOrders();
   else if (activeTab === "codes") await loadCodes();
   else if (activeTab === "promos") await loadPromos();
-  else if (activeTab === "store") await loadStore();
   else if (activeTab === "feedback") await loadFeedback();
   else if (activeTab === "email" && typeof window.loadEmailCenter === "function") await window.loadEmailCenter();
   else if (activeTab === "support") await loadSupport();
@@ -228,6 +220,7 @@ function renderDashboard(data) {
   renderCommandStatus(data);
   renderOrders(sortItems("recentOrders", data.recentOrders || []), els.recentOrdersBody, true);
   renderBreakdown(els.methodBreakdown, data.methods || [], "method", "orders");
+  renderRevenueBreakdown(els.orderTypeBreakdown, data.orderTypes || [], s.currency || "GBP");
   renderBreakdown(els.topSites, data.sites || [], "siteName", "orders");
   renderEmailDelivery(s);
   drawTrend(data.daily || [], s.currency || "GBP");
@@ -236,17 +229,15 @@ function renderDashboard(data) {
 function renderCommandStatus(data) {
   const operations = data.operations || {};
   const supportUnread = Number(data.support?.unread) || 0;
-  const pendingFulfilment = Number(operations.pendingFulfilment) || 0;
   const staleOrders = Number(operations.staleCreatedOrders) || 0;
   const failedEmails = Number(operations.recentEmailFailures) || 0;
-  const activeIssues = supportUnread + pendingFulfilment + staleOrders + failedEmails;
+  const activeIssues = supportUnread + staleOrders + failedEmails;
 
   els.commandHealthText.textContent = activeIssues
     ? `${formatNumber(activeIssues)} item${activeIssues === 1 ? "" : "s"} need attention`
     : "Operations are clear";
   els.commandHealthText.closest(".command-status")?.classList.toggle("attention", activeIssues > 0);
-  setNavBadge(els.navOrdersBadge, staleOrders + pendingFulfilment);
-  setNavBadge(els.navStoreBadge, pendingFulfilment);
+  setNavBadge(els.navOrdersBadge, staleOrders);
   setNavBadge(els.navSupportBadge, supportUnread);
 
 }
@@ -279,31 +270,180 @@ function renderEmailDelivery(summary) {
   });
 }
 
+function renderRevenueBreakdown(container, items, currency) {
+  container.innerHTML="";
+  if(!items.length){container.innerHTML='<div class="muted">No data yet.</div>';return;}
+  const maximum=Math.max(...items.map(item=>Number(item.revenue)||0),1);
+  items.slice(0,8).forEach(item=>{const row=document.createElement("div");row.className="breakdown-row";const label=document.createElement("div");label.className="breakdown-label";label.textContent=orderTypeLabel(item.orderType);const bar=document.createElement("div");bar.className="bar";const fill=document.createElement("span");fill.style.width=`${Math.max(4,(Number(item.revenue)||0)/maximum*100)}%`;bar.appendChild(fill);const value=document.createElement("div");value.className="breakdown-value";value.textContent=money(item.revenue,currency);row.append(label,bar,value);container.appendChild(row);});
+}
+
 async function loadAnalytics() {
   els.analyticsHitsBody.innerHTML = '<tr><td colspan="5" class="muted">Loading...</td></tr>';
   els.adminLoginAttemptsBody.innerHTML = '<tr><td colspan="3" class="muted">Loading...</td></tr>';
+  els.analyticsDemandTrend.innerHTML = '<div class="analytics-empty">Loading aggregated demand...</div>';
+  els.analyticsActivationTrend.innerHTML = '<div class="analytics-empty">Loading aggregated activations...</div>';
+  els.geographicViralityTrend.innerHTML = '<div class="analytics-empty">Loading geographic virality...</div>';
+  analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
   try {
-    analyticsData = await api("analytics", { limit: 150 });
+    analyticsData = await api("analytics", { limit: 25, periodDays: Number(els.analyticsRange.value) || 30 });
     renderAnalytics(analyticsData);
   } catch (error) {
     els.analyticsHitsBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(error.message)}</td></tr>`;
     els.adminLoginAttemptsBody.innerHTML = `<tr><td colspan="3" class="muted">${escapeHtml(error.message)}</td></tr>`;
+    els.analyticsDemandTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
+    els.analyticsActivationTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
+    els.geographicViralityTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
   }
 }
 
 function renderAnalytics(data) {
   const s = data.summary || {};
+  const periodDays = Number(data.meta?.periodDays) || Number(els.analyticsRange.value) || 30;
+  const periodHits = Number(s.periodHits) || 0;
+  const noOrderHits = Number(s.noOrderHits) || 0;
+  const noOrderRate = periodHits ? (noOrderHits / periodHits) * 100 : 0;
   els.analyticsTodayMetric.textContent = formatNumber(s.todayHits);
-  els.analyticsWeekMetric.textContent = formatNumber(s.sevenDayHits);
-  els.analyticsNoOrderMetric.textContent = formatNumber(s.noOrderEstimate);
+  els.analyticsPeriodMetric.textContent = formatNumber(periodHits);
+  els.analyticsPeriodSub.textContent = `${periodDays}-day valid activity`;
+  els.analyticsNoOrderMetric.textContent = `${noOrderRate.toFixed(1)}%`;
+  els.analyticsNoOrderSub.textContent = `${formatNumber(noOrderHits)} of ${formatNumber(periodHits)} selections`;
   els.analyticsUniqueMetric.textContent = formatNumber(s.uniqueVisitors);
   els.analyticsRejectedAdminMetric.textContent = formatNumber(s.rejectedAdminLogins);
-  els.analyticsBotSub.textContent = `${formatNumber(s.thirtyDayHits)} hits in 30 days · ${formatNumber(s.botHits)} filtered bots`;
+  els.analyticsBotSub.textContent = `${periodDays}-day deduplicated visitors`;
+  const excluded = (Number(s.excludedHits) || 0) + (Number(s.botHits) || 0);
+  els.analyticsDataQuality.textContent = `${formatNumber(excluded)} filtered`;
+  els.analyticsDataQuality.classList.toggle("hidden", excluded <= 0);
   renderBreakdown(els.analyticsTopSites, data.topSites || [], "siteName", "hits");
+  renderBreakdown(els.analyticsTopSearches, data.topSearches || [], "query", "searches");
   renderBreakdown(els.analyticsSearchModes, data.modes || [], "mode", "hits");
   renderBreakdown(els.analyticsReferrers, data.referrers || [], "referrer", "hits");
-  renderAnalyticsHits(sortItems("analyticsHits", data.recentHits || []));
+  renderAnalyticsTrend(data.daily || []);
+  renderAnalyticsBars(els.analyticsActivationTrend, data.weeklyActivations || [], "activations", "week", "activations", "activeCodes");
+  renderGeographicVirality(data.geographicVirality || {});
+  analyticsHitPaging.nextCursor = data.recentHitsPage?.nextCursor || null;
+  renderAnalyticsHits(data.recentHits || []);
+  updateAnalyticsPager(data.recentHitsPage || {});
   renderAdminLoginAttempts(data.adminLoginAttempts || []);
+}
+
+function renderGeographicVirality(data) {
+  const available=Boolean(data.available);
+  els.withinCityViralityMetric.textContent=formatCoefficient(data.withinCityVirality);
+  els.crossCityViralityMetric.textContent=formatCoefficient(data.crossCityVirality);
+  els.withinCityViralitySample.textContent=available
+    ? `${formatNumber(data.qualifyingCityCount)} qualifying cities · min ${formatNumber(data.minCitySample)} sources each`
+    : "Referral attribution unavailable";
+  els.crossCityViralitySample.textContent=available
+    ? `${formatNumber(data.crossCityPairs)} unique cross-city pairs · ${formatNumber(data.knownLocationSources)} known-location sources`
+    : "Referral attribution unavailable";
+  els.geographicLocationCoverage.textContent=`Location coverage ${(Number(data.locationCoverage||0)*100).toFixed(0)}%`;
+  els.geographicViralitySummary.textContent=available
+    ? `${formatNumber(data.eligibleSourceAccommodations)} eligible source accommodations · ${formatNumber(data.sameSitePairsExcluded)} same-site pairs excluded · ${formatNumber(data.attributionDays)}-day attribution window`
+    : (data.reason||"Referral attribution data is not available.");
+
+  renderViralityTrend(data.trend||[],available);
+  els.geographicCityRows.innerHTML="";
+  const cities=data.cities||[];
+  if(!cities.length){els.geographicCityRows.innerHTML='<tr><td colspan="6" class="muted">No qualifying geographic propagation in this period.</td></tr>';}
+  else cities.forEach(city=>{const tr=document.createElement("tr");appendCell(tr,city.city);appendCell(tr,formatNumber(city.activeAccommodations));appendCell(tr,formatNumber(city.sameCityAccommodationsReached));appendCell(tr,formatCoefficient(city.withinCityK));appendCell(tr,formatNumber(city.otherCitiesReached));appendCell(tr,formatNumber(city.crossCityAcquisitions));els.geographicCityRows.appendChild(tr);});
+  renderBreakdown(els.geographicRoutes,(data.topRoutes||[]).map(route=>({route:`${route.sourceCity} → ${route.targetCity}`,count:route.accommodations})),"route","count");
+}
+
+function renderViralityTrend(points,available){
+  els.geographicViralityTrend.replaceChildren();
+  els.geographicViralityTrend.style.setProperty("--bar-count",String(Math.max(points.length,1)));
+  if(!available||!points.length){const empty=document.createElement("div");empty.className="analytics-empty";empty.textContent=available?"No geographic virality activity in this period.":"Referral attribution unavailable.";els.geographicViralityTrend.appendChild(empty);return;}
+  const maximum=Math.max(...points.flatMap(point=>[Number(point.withinCityVirality)||0,Number(point.crossCityVirality)||0]),.01);
+  points.forEach(point=>{const group=document.createElement("div");group.className="virality-trend-group";const within=Number(point.withinCityVirality)||0;const cross=Number(point.crossCityVirality)||0;group.title=`${formatAnalyticsDate(point.start)} · within ${formatCoefficient(within)} · cross ${formatCoefficient(cross)} · ${formatNumber(point.eligibleSourceAccommodations)} sources`;group.setAttribute("aria-label",group.title);group.tabIndex=0;const bars=document.createElement("div");bars.className="virality-trend-bars";const withinBar=document.createElement("span");withinBar.className="within";withinBar.style.height=`${Math.max(within?3:0,within/maximum*100)}%`;const crossBar=document.createElement("span");crossBar.className="cross";crossBar.style.height=`${Math.max(cross?3:0,cross/maximum*100)}%`;bars.append(withinBar,crossBar);const label=document.createElement("small");label.textContent=formatAnalyticsDate(point.start,true);group.append(bars,label);els.geographicViralityTrend.appendChild(group);});
+}
+
+function formatCoefficient(value){return `${(Number(value)||0).toFixed(2)}×`;}
+
+function renderAnalyticsTrend(points) {
+  renderAnalyticsBars(els.analyticsDemandTrend, points, "hits", "date", "selections", "uniqueVisitors");
+  const total = points.reduce((sum, point) => sum + (Number(point.hits) || 0), 0);
+  const busiest = points.reduce((best, point) => Number(point.hits) > Number(best?.hits || 0) ? point : best, null);
+  const average = points.length ? total / points.length : 0;
+  els.analyticsTrendSummary.textContent = busiest
+    ? `${average.toFixed(1)} selections per day · peak ${formatNumber(busiest.hits)} on ${formatAnalyticsDate(busiest.date)}`
+    : "No valid selection activity in this period.";
+}
+
+function renderAnalyticsBars(container, points, valueKey, dateKey, valueLabel, secondaryKey) {
+  container.replaceChildren();
+  container.style.setProperty("--bar-count", String(Math.max(points.length, 1)));
+  if (!points.length) {
+    const empty = document.createElement("div");
+    empty.className = "analytics-empty";
+    empty.textContent = "No aggregated activity in this period.";
+    container.appendChild(empty);
+    return;
+  }
+  const maximum = Math.max(...points.map((point) => Number(point[valueKey]) || 0), 1);
+  const labelStep = Math.max(1, Math.ceil(points.length / 6));
+  points.forEach((point, index) => {
+    const value = Number(point[valueKey]) || 0;
+    const secondary = Number(point[secondaryKey]) || 0;
+    const date = point[dateKey];
+    const bar = document.createElement("div");
+    bar.className = "analytics-bar";
+    bar.tabIndex = 0;
+    bar.title = `${formatAnalyticsDate(date)} · ${formatNumber(value)} ${valueLabel} · ${formatNumber(secondary)} ${secondaryKey === "activeCodes" ? "active codes" : "unique visitors"}`;
+    bar.setAttribute("aria-label", bar.title);
+    const fill = document.createElement("span");
+    fill.style.height = `${Math.max(value ? 3 : 0, (value / maximum) * 100)}%`;
+    bar.appendChild(fill);
+    if (index % labelStep === 0 || index === points.length - 1) {
+      const label = document.createElement("small");
+      label.textContent = formatAnalyticsDate(date, true);
+      bar.appendChild(label);
+    }
+    container.appendChild(bar);
+  });
+}
+
+function formatAnalyticsDate(value, compact = false) {
+  const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return String(value || "");
+  return date.toLocaleDateString([], compact ? { month: "short", day: "numeric" } : { weekday: "short", month: "short", day: "numeric" });
+}
+
+async function loadAnalyticsHitPage(cursor, direction) {
+  if (analyticsHitPaging.loading) return;
+  const previousState = { ...analyticsHitPaging, history: [...analyticsHitPaging.history] };
+  if (direction === "older") analyticsHitPaging.history.push(analyticsHitPaging.cursor);
+  else if (direction === "newer") analyticsHitPaging.history.pop();
+  analyticsHitPaging.loading = true;
+  updateAnalyticsPager({});
+  try {
+    const data = await api("analytics_events", {
+      limit: 25,
+      cursor: cursor || null,
+      periodDays: Number(els.analyticsRange.value) || 30
+    });
+    analyticsHitPaging.cursor = cursor || null;
+    analyticsHitPaging.nextCursor = data.recentHitsPage?.nextCursor || null;
+    analyticsData.recentHits = data.recentHits || [];
+    analyticsData.recentHitsPage = data.recentHitsPage || {};
+    renderAnalyticsHits(analyticsData.recentHits);
+    updateAnalyticsPager(analyticsData.recentHitsPage);
+  } catch (error) {
+    analyticsHitPaging = previousState;
+    els.analyticsHitsPageStatus.textContent = error.message;
+    updateAnalyticsPager(analyticsData?.recentHitsPage || {});
+  } finally {
+    analyticsHitPaging.loading = false;
+    updateAnalyticsPager(analyticsData?.recentHitsPage || {});
+  }
+}
+
+function updateAnalyticsPager(page = {}) {
+  const count = Number(page.returned) || 0;
+  els.analyticsHitsPageStatus.textContent = analyticsHitPaging.loading
+    ? "Loading page..."
+    : `Page ${analyticsHitPaging.history.length + 1} · ${formatNumber(count)} event${count === 1 ? "" : "s"}`;
+  els.analyticsHitsPrev.disabled = analyticsHitPaging.loading || analyticsHitPaging.history.length === 0;
+  els.analyticsHitsNext.disabled = analyticsHitPaging.loading || !analyticsHitPaging.nextCursor;
 }
 
 function renderAnalyticsHits(hits) {
@@ -314,7 +454,6 @@ function renderAnalyticsHits(hits) {
   }
   hits.forEach((hit) => {
     const tr = document.createElement("tr");
-    markTimedOutput(tr, hit.createdAt);
     appendCell(tr, formatDateTime(hit.createdAt));
     appendCell(tr, hit.siteName);
     appendCell(tr, hit.searchQuery || "—");
@@ -356,9 +495,9 @@ function drawTrend(data, currency) {
 }
 
 async function loadOrders() {
-  els.ordersBody.innerHTML = '<tr><td colspan="8" class="muted">Loading…</td></tr>';
+  els.ordersBody.innerHTML = '<tr><td colspan="9" class="muted">Loading…</td></tr>';
   try { const data = await api("orders", { limit: 200, status: els.orderStatusFilter.value }); ordersData = data.orders || []; renderFilteredOrders(); }
-  catch (error) { els.ordersBody.innerHTML = `<tr><td colspan="8" class="muted">${escapeHtml(error.message)}</td></tr>`; }
+  catch (error) { els.ordersBody.innerHTML = `<tr><td colspan="9" class="muted">${escapeHtml(error.message)}</td></tr>`; }
 }
 
 function filteredOrders() {
@@ -369,6 +508,7 @@ function filteredOrders() {
     order.siteName,
     order.siteId,
     order.paymentMethod,
+    order.orderType,
     order.code,
     order.email,
     order.status,
@@ -417,14 +557,14 @@ async function cleanupCreatedOrders() {
 
 function renderOrders(orders, tbody, compact) {
   tbody.innerHTML = "";
-  if (!orders.length) { tbody.innerHTML = `<tr><td colspan="${compact ? 5 : 8}" class="muted">No orders yet.</td></tr>`; return; }
+  if (!orders.length) { tbody.innerHTML = `<tr><td colspan="${compact ? 6 : 9}" class="muted">No orders yet.</td></tr>`; return; }
   orders.forEach((order) => {
     const tr = document.createElement("tr");
     markTimedOutput(tr, order.completedAt || order.createdAt);
     if (compact) {
-      appendCell(tr, formatDate(order.completedAt || order.createdAt)); appendCell(tr, order.siteName); appendCell(tr, paymentMethodLabel(order.paymentMethod)); appendCell(tr, money(order.amount, order.currency)); appendPillCell(tr, order.emailStatus || "—");
+      appendCell(tr, formatDate(order.completedAt || order.createdAt)); appendCell(tr, order.siteName); appendCell(tr, orderTypeLabel(order.orderType,order.quantity)); appendCell(tr, paymentMethodLabel(order.paymentMethod)); appendCell(tr, money(order.amount, order.currency)); appendPillCell(tr, order.emailStatus || "—");
     } else {
-      appendCell(tr, formatDateTime(order.completedAt || order.createdAt)); appendCell(tr, order.orderId, "mono"); appendCell(tr, order.siteName); appendCell(tr, paymentMethodLabel(order.paymentMethod)); appendCell(tr, order.code || "—", "mono"); appendCell(tr, order.email || "—"); appendCell(tr, money(order.amount, order.currency)); appendPillCell(tr, order.status);
+      appendCell(tr, formatDateTime(order.completedAt || order.createdAt)); appendCell(tr, order.orderId, "mono"); appendCell(tr, order.siteName); appendCell(tr, orderTypeLabel(order.orderType,order.quantity)); appendCell(tr, paymentMethodLabel(order.paymentMethod)); appendCell(tr, order.code || "—", "mono"); appendCell(tr, order.email || "—"); appendCell(tr, money(order.amount, order.currency)); appendPillCell(tr, order.status);
     }
     tbody.appendChild(tr);
   });
@@ -1149,503 +1289,6 @@ function renderFeedbackInvitations() {
   invitations.forEach(invite=>{const tr=document.createElement("tr");markTimedOutput(tr,invite.sentAt||invite.createdAt);appendCell(tr,formatDateTime(invite.sentAt||invite.createdAt));appendCell(tr,invite.email);appendCell(tr,invite.siteName||"—");appendCell(tr,feedbackSourceLabel(invite.source));appendPillCell(tr,titleCase(invite.status));appendCell(tr,invite.respondedAt?formatDateTime(invite.respondedAt):invite.error||"—");els.feedbackInvitationsBody.appendChild(tr);});
 }
 
-async function loadStore() {
-  if (!els.storeProductList) return;
-  els.storeProductList.innerHTML = '<div class="muted">Loading products...</div>';
-  els.storeOrdersList.innerHTML = '<div class="muted">Loading orders...</div>';
-  try {
-    storeData = await api("store_data");
-    renderStoreAdmin();
-  } catch (error) {
-    els.storeProductList.innerHTML = `<div class="message bad">${escapeHtml(error.message)}</div>`;
-    els.storeOrdersList.innerHTML = "";
-  }
-}
-
-function updateStoreInviteDelivery() {
-  const customer = selectedStoreCustomer();
-  const hasEmail = Boolean(customer?.email);
-  if (!hasEmail) els.storeInviteDelivery.value = "POPUP";
-  els.storeInviteDeliveryOptions.querySelectorAll('input[name="storeInviteDeliveryChoice"]').forEach((input) => {
-    input.disabled = !customer || (!hasEmail && input.value !== "POPUP");
-    input.checked = input.value === els.storeInviteDelivery.value;
-    input.closest("label")?.setAttribute("aria-disabled", String(input.disabled));
-  });
-  els.createStoreMemberBtn.disabled = !customer;
-  els.createStoreMemberBtn.textContent = customer ? "Create member invitation" : "Select a customer to continue";
-  renderSelectedStoreCustomer(customer);
-}
-
-function renderStoreAdmin() {
-  const summary = storeData?.summary || {};
-  els.storeMembersMetric.textContent = formatNumber(summary.activeMembers);
-  els.storeMembersSub.textContent = `${formatNumber(summary.memberInvites)} member-generated invitations`;
-  els.storeProductsMetric.textContent = formatNumber(summary.activeProducts);
-  els.storeRevenueMetric.textContent = money(summary.revenue, summary.currency);
-  els.storeRevenueSub.textContent = `${formatNumber(summary.completedOrders)} completed orders`;
-  els.storeFulfilmentMetric.textContent = formatNumber(summary.pendingFulfilment);
-  els.storeEligibleCustomerCount.textContent = formatNumber(storeInviteCustomers().length);
-  if (!storeInviteCustomers().some((customer) => customer.code === selectedStoreCustomerCode)) selectedStoreCustomerCode = "";
-  renderStoreInviteCustomers();
-  renderStoreMembers();
-  renderStoreProducts();
-  renderStoreOrders();
-}
-
-function storeInviteCustomers() {
-  return storeData?.inviteCustomers || [];
-}
-
-function selectedStoreCustomer() {
-  return storeInviteCustomers().find((customer) => customer.code === selectedStoreCustomerCode) || null;
-}
-
-function visibleStoreInviteCustomers() {
-  const term = storeCustomerFilter.trim().toLowerCase();
-  return storeInviteCustomers().filter((customer) => !term || `${customer.email} ${customer.code} ${customer.siteName}`.toLowerCase().includes(term));
-}
-
-function storeCustomerInitials(customer = {}) {
-  const source = String(customer.email || customer.siteName || customer.code || "?").split("@")[0];
-  const parts = source.replace(/[^a-z0-9]+/gi, " ").trim().split(/\s+/).filter(Boolean);
-  return (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : source.slice(0, 2)).toUpperCase() || "?";
-}
-
-function renderSelectedStoreCustomer(customer) {
-  els.storeSelectedCustomer.innerHTML = "";
-  els.storeSelectedCustomer.classList.toggle("empty", !customer);
-
-  const avatar = document.createElement("div");
-  avatar.className = "store-customer-avatar";
-  avatar.setAttribute("aria-hidden", "true");
-  avatar.textContent = customer ? storeCustomerInitials(customer) : "?";
-
-  const copy = document.createElement("div");
-  copy.className = "store-selected-copy";
-  const eyebrow = document.createElement("span");
-  eyebrow.textContent = "Selected customer";
-  const title = document.createElement("strong");
-  title.textContent = customer ? (customer.email || customer.siteName || customer.code) : "Choose someone from the list";
-  const meta = document.createElement("small");
-  meta.textContent = customer
-    ? [customer.code, customer.siteName, customer.email ? "Email available" : "No email on file"].filter(Boolean).join(" · ")
-    : "Their access details will appear here.";
-  copy.append(eyebrow, title, meta);
-  els.storeSelectedCustomer.append(avatar, copy);
-
-  if (customer) {
-    const status = document.createElement("span");
-    status.className = "store-selected-status";
-    status.textContent = customer.email ? "Email ready" : "Popup only";
-    els.storeSelectedCustomer.appendChild(status);
-  }
-}
-
-function renderStoreInviteCustomers() {
-  const customers = visibleStoreInviteCustomers();
-  const total = storeInviteCustomers().length;
-  els.storeCustomerList.innerHTML = "";
-  els.storeCustomerListCount.textContent = storeCustomerFilter
-    ? `${formatNumber(customers.length)} of ${formatNumber(total)}`
-    : `${formatNumber(total)} available`;
-  els.storeClearCustomerFilterBtn.classList.toggle("hidden", !storeCustomerFilter);
-  if (!customers.length) {
-    const empty = document.createElement("div");
-    empty.className = "store-empty";
-    empty.textContent = storeInviteCustomers().length ? "No matching customers." : "No eligible customers found.";
-    els.storeCustomerList.appendChild(empty);
-    updateStoreInviteDelivery();
-    return;
-  }
-  customers.forEach((customer) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `store-customer-row${customer.code === selectedStoreCustomerCode ? " active" : ""}`;
-    button.setAttribute("aria-pressed", String(customer.code === selectedStoreCustomerCode));
-    const avatar = document.createElement("div");
-    avatar.className = "store-customer-row-avatar";
-    avatar.setAttribute("aria-hidden", "true");
-    avatar.textContent = storeCustomerInitials(customer);
-    const main = document.createElement("div");
-    main.className = "store-customer-row-main";
-    const label = document.createElement("strong");
-    label.textContent = customer.email || "No email on file";
-    const meta = document.createElement("span");
-    meta.textContent = customer.siteName || "Site unavailable";
-    main.append(label, meta);
-    const side = document.createElement("div");
-    side.className = "store-customer-row-side";
-    const code = document.createElement("span");
-    code.className = "store-customer-code";
-    code.textContent = customer.code;
-    const delivery = document.createElement("div");
-    delivery.className = "store-customer-delivery";
-    delivery.textContent = customer.email ? "Email or popup" : "Popup only";
-    side.append(code, delivery);
-    button.append(avatar, main, side);
-    button.addEventListener("click", () => {
-      selectedStoreCustomerCode = customer.code;
-      els.storeInviteDelivery.value = customer.email ? "EMAIL" : "POPUP";
-      els.storeMemberResult.classList.add("hidden");
-      setMessage(els.storeMemberMessage, "", "");
-      renderStoreInviteCustomers();
-    });
-    els.storeCustomerList.appendChild(button);
-  });
-  updateStoreInviteDelivery();
-}
-
-async function createStoreMember() {
-  const customer = selectedStoreCustomer();
-  if (!customer) return setMessage(els.storeMemberMessage, "Select a customer first.", "bad");
-  const delivery = els.storeInviteDelivery.value;
-  if ((delivery === "EMAIL" || delivery === "BOTH") && !customer.email) {
-    return setMessage(els.storeMemberMessage, "This customer has no email on file. Choose laundry login popup.", "bad");
-  }
-  els.createStoreMemberBtn.disabled = true;
-  setMessage(els.storeMemberMessage, "Creating invitation...", "");
-  try {
-    const result = await api("store_create_member", {
-      inviteLimit: els.storeMemberInviteLimit.value,
-      delivery,
-      laundryAccessCode: customer.code
-    });
-    selectedStoreCustomerCode = "";
-    renderStoreMemberResult(result);
-    const note = result.emailStatus === "SENT" && result.popupEnabled
-      ? "Invitation created for email and the login popup."
-      : result.emailStatus === "SENT"
-        ? "Invitation created and emailed."
-        : result.popupEnabled
-          ? "Invitation created for the customer's next laundry login."
-      : result.emailStatus === "FAILED"
-        ? "Invitation created, but the email failed. Share the link below."
-        : "Invitation created. Share the link below.";
-    setMessage(els.storeMemberMessage, note, result.emailStatus === "FAILED" ? "bad" : "ok");
-    await loadStore();
-  } catch (error) {
-    setMessage(els.storeMemberMessage, error.message, "bad");
-  } finally {
-    updateStoreInviteDelivery();
-  }
-}
-
-function renderStoreMemberResult(result) {
-  els.storeMemberResult.innerHTML = "";
-  const code = document.createElement("strong");
-  code.className = "mono";
-  code.textContent = result.code;
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.className = "button small";
-  copy.textContent = "Copy access link";
-  copy.addEventListener("click", async () => {
-    await copyText(result.link);
-    copy.textContent = "Copied";
-  });
-  els.storeMemberResult.append(code, copy);
-  els.storeMemberResult.classList.remove("hidden");
-}
-
-function renderStoreMembers() {
-  const members = storeData?.members || [];
-  els.storeMembersBody.innerHTML = "";
-  if (!members.length) {
-    els.storeMembersBody.innerHTML = '<tr><td colspan="9" class="muted">No store members yet.</td></tr>';
-    return;
-  }
-  members.forEach((member) => {
-    const tr = document.createElement("tr");
-    const customer = document.createElement("td");
-    const email = document.createElement("strong");
-    email.textContent = member.email || "Shareable code";
-    const source = document.createElement("span");
-    source.className = "store-cell-sub";
-    source.textContent = member.source === "ADMIN"
-      ? `Admin invite - ${titleCase(member.delivery || "email")}`
-      : "Member invite";
-    customer.append(email, source);
-    tr.appendChild(customer);
-    appendCell(tr, member.code, "mono");
-    appendCell(tr, member.inviterEmail || member.inviterCode || "-");
-
-    const inviteCell = document.createElement("td");
-    const inviteLabel = document.createElement("strong");
-    inviteLabel.textContent = `${member.invitesRemaining} of ${member.inviteLimit} left`;
-    const usage = document.createElement("span");
-    usage.className = "store-cell-sub";
-    usage.textContent = `${member.inviteCount} created`;
-    inviteCell.append(inviteLabel, usage);
-    tr.appendChild(inviteCell);
-    appendCell(tr, member.completedOrders);
-    appendCell(tr, money(member.creditBalance || 0, "GBP"));
-    appendCell(tr, formatDateTime(member.lastUsedAt));
-    appendPillCell(tr, member.active ? "Active" : "Inactive");
-
-    const actions = document.createElement("td");
-    const wrap = document.createElement("div");
-    wrap.className = "row-actions";
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "button small";
-    copy.textContent = "Copy";
-    copy.addEventListener("click", async () => {
-      await copyText(`${location.origin}/store.html?code=${encodeURIComponent(member.code)}`);
-      copy.textContent = "Copied";
-    });
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = `button small ${member.active ? "danger" : "primary"}`;
-    toggle.textContent = member.active ? "Disable" : "Enable";
-    toggle.addEventListener("click", () => toggleStoreMember(member, toggle));
-    wrap.append(copy, toggle);
-    actions.appendChild(wrap);
-    tr.appendChild(actions);
-    els.storeMembersBody.appendChild(tr);
-  });
-}
-
-async function saveStoreMemberInviteLimit(memberId, input, button) {
-  button.disabled = true;
-  try {
-    await api("store_set_member_invite_limit", { memberId, inviteLimit: input.value });
-    button.textContent = "Saved";
-    await loadStore();
-  } catch (error) {
-    alert(error.message);
-    button.disabled = false;
-  }
-}
-
-async function toggleStoreMember(member, button) {
-  button.disabled = true;
-  try {
-    await api("store_set_member_active", { memberId: member.id, active: !member.active });
-    await loadStore();
-  } catch (error) {
-    alert(error.message);
-    button.disabled = false;
-  }
-}
-
-function renderStoreProducts() {
-  const products = storeData?.products || [];
-  els.storeProductList.innerHTML = "";
-  if (!products.length) {
-    els.storeProductList.innerHTML = '<div class="store-empty">No products yet.</div>';
-    return;
-  }
-  products.forEach((product) => {
-    const row = document.createElement("article");
-    row.className = "store-product-row";
-    const image = document.createElement("div");
-    image.className = "store-product-thumb";
-    if (product.imageUrl) {
-      const img = document.createElement("img");
-      img.src = product.imageUrl;
-      img.alt = "";
-      img.addEventListener("error", () => { img.remove(); image.textContent = "No image"; });
-      image.appendChild(img);
-    } else image.textContent = "No image";
-    const copy = document.createElement("div");
-    copy.className = "store-product-copy";
-    const title = document.createElement("strong");
-    title.textContent = product.name;
-    const description = document.createElement("span");
-    description.textContent = product.description || "No description";
-    copy.append(title, description);
-    const meta = document.createElement("div");
-    meta.className = "store-product-meta";
-    const price = document.createElement("strong");
-    price.textContent = money(product.price, product.currency);
-    const order = document.createElement("span");
-    order.textContent = `Order ${product.sortOrder}`;
-    meta.append(price, order);
-    const status = document.createElement("span");
-    status.className = `pill ${product.active ? "active" : "inactive"}`;
-    status.textContent = product.active ? "Active" : "Hidden";
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.className = "button small";
-    edit.textContent = "Edit";
-    edit.addEventListener("click", () => editStoreProduct(product));
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "button small danger";
-    remove.textContent = "Delete";
-    remove.addEventListener("click", () => deleteStoreProduct(product, remove));
-    actions.append(edit, remove);
-    row.append(image, copy, meta, status, actions);
-    els.storeProductList.appendChild(row);
-  });
-}
-
-function editStoreProduct(product) {
-  editingStoreProductId = product.id;
-  els.storeProductFormTitle.textContent = "Edit product";
-  els.storeProductName.value = product.name;
-  els.storeProductPrice.value = product.price;
-  els.storeProductDescription.value = product.description;
-  els.storeProductImageUrl.value = product.imageUrl;
-  els.storeProductSortOrder.value = product.sortOrder;
-  els.storeProductActive.checked = product.active;
-  els.saveStoreProductBtn.textContent = "Save product";
-  els.cancelStoreProductEditBtn.classList.remove("hidden");
-  updateStoreImagePreview();
-  openControlDrawer("storeProductDrawer");
-}
-
-function resetStoreProductForm() {
-  editingStoreProductId = null;
-  els.storeProductFormTitle.textContent = "Add product";
-  els.storeProductName.value = "";
-  els.storeProductPrice.value = "";
-  els.storeProductDescription.value = "";
-  els.storeProductImageUrl.value = "";
-  els.storeProductSortOrder.value = "0";
-  els.storeProductActive.checked = true;
-  els.saveStoreProductBtn.textContent = "Add product";
-  els.cancelStoreProductEditBtn.classList.add("hidden");
-  els.storeProductImagePreview.classList.add("hidden");
-  setMessage(els.storeProductMessage, "", "");
-}
-
-async function saveStoreProduct() {
-  const payload = {
-    productId: editingStoreProductId,
-    name: els.storeProductName.value,
-    price: els.storeProductPrice.value,
-    description: els.storeProductDescription.value,
-    imageUrl: els.storeProductImageUrl.value,
-    sortOrder: els.storeProductSortOrder.value,
-    active: els.storeProductActive.checked
-  };
-  els.saveStoreProductBtn.disabled = true;
-  setMessage(els.storeProductMessage, editingStoreProductId ? "Saving product..." : "Adding product...", "");
-  try {
-    await api(editingStoreProductId ? "store_update_product" : "store_create_product", payload);
-    resetStoreProductForm();
-    await loadStore();
-  } catch (error) {
-    setMessage(els.storeProductMessage, error.message, "bad");
-  } finally {
-    els.saveStoreProductBtn.disabled = false;
-  }
-}
-
-async function deleteStoreProduct(product, button) {
-  if (!window.confirm(`Delete ${product.name}? Existing orders will keep their product details.`)) return;
-  button.disabled = true;
-  try {
-    await api("store_delete_product", { productId: product.id });
-    if (editingStoreProductId === product.id) resetStoreProductForm();
-    await loadStore();
-  } catch (error) {
-    alert(error.message);
-    button.disabled = false;
-  }
-}
-
-function updateStoreImagePreview() {
-  const url = els.storeProductImageUrl.value.trim();
-  els.storeProductImagePreview.innerHTML = "";
-  if (!/^https?:\/\//i.test(url) && !/^\/assets\/[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(url)) {
-    els.storeProductImagePreview.classList.add("hidden");
-    return;
-  }
-  const image = document.createElement("img");
-  image.src = url;
-  image.alt = "Product image preview";
-  image.addEventListener("error", () => {
-    els.storeProductImagePreview.textContent = "Image could not be loaded.";
-  });
-  els.storeProductImagePreview.appendChild(image);
-  els.storeProductImagePreview.classList.remove("hidden");
-}
-
-function renderStoreOrders() {
-  const orders = (storeData?.orders || []).filter((order) => order.status === "COMPLETED");
-  els.storeOrdersList.innerHTML = "";
-  if (!orders.length) {
-    els.storeOrdersList.innerHTML = '<div class="store-empty">No merch orders yet.</div>';
-    return;
-  }
-  orders.forEach((order) => {
-    const row = document.createElement("article");
-    row.className = "store-order-row";
-    markTimedOutput(row, order.completedAt || order.createdAt);
-    const orderMain = document.createElement("div");
-    orderMain.className = "store-order-main";
-    const title = document.createElement("strong");
-    title.textContent = order.orderNumber || "Merch order";
-    const payment = document.createElement("span");
-    payment.textContent = `${order.quantity} x ${order.productName} - ${money(order.amount, order.currency)} - ${titleCase(order.fulfilmentStatus)} - ${formatDateTime(order.completedAt || order.createdAt)}`;
-    const reference = document.createElement("code");
-    reference.textContent = "Paid order";
-    orderMain.append(title, payment, reference);
-    const customer = document.createElement("div");
-    customer.className = "store-order-address";
-    const name = document.createElement("strong");
-    name.textContent = order.recipientName;
-    const email = document.createElement("span");
-    email.textContent = order.customerEmail;
-    const address = document.createElement("span");
-    address.textContent = [order.addressLine1, order.addressLine2, order.city, order.postcode, order.country].filter(Boolean).join(", ");
-    customer.append(name, email, address);
-    const controls = document.createElement("div");
-    controls.className = "store-order-controls";
-    const select = document.createElement("select");
-    ["PENDING", "PROCESSING", "SHIPPED", "CANCELLED"].forEach((status) => {
-      const option = document.createElement("option");
-      option.value = status;
-      option.textContent = titleCase(status);
-      option.selected = status === order.fulfilmentStatus;
-      select.appendChild(option);
-    });
-    select.disabled = order.status !== "COMPLETED";
-    const save = document.createElement("button");
-    save.type = "button";
-    save.className = "button small primary";
-    save.textContent = "Update";
-    save.disabled = order.status !== "COMPLETED";
-    save.addEventListener("click", () => updateStoreOrder(order.orderId, select.value, save));
-    controls.append(select, save);
-    row.append(orderMain, customer, controls);
-    els.storeOrdersList.appendChild(row);
-  });
-}
-
-async function updateStoreOrder(orderId, fulfilmentStatus, button) {
-  button.disabled = true;
-  try {
-    await api("store_set_order_fulfilment", { orderId, fulfilmentStatus });
-    await loadStore();
-  } catch (error) {
-    alert(error.message);
-    button.disabled = false;
-  }
-}
-
-async function cleanupStoreStaleOrders() {
-  els.storeCleanupStaleOrdersBtn.disabled = true;
-  setMessage(els.storeCleanupMessage, "Clearing stale merch orders...", "");
-  try {
-    const result = await api("cleanup_created_orders", { scope: "store", olderThanHours: 24 });
-    setMessage(
-      els.storeCleanupMessage,
-      `Deleted ${formatNumber(result.deleted || 0)} stale checkout attempts.`,
-      "ok"
-    );
-    await loadStore();
-  } catch (error) {
-    setMessage(els.storeCleanupMessage, error.message, "bad");
-  } finally {
-    els.storeCleanupStaleOrdersBtn.disabled = false;
-  }
-}
-
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -1657,18 +1300,32 @@ async function copyText(value) {
 async function loadSupport() {
   els.ticketList.innerHTML='<div class="muted">Loading…</div>';
   try {
-    const data=await api("support_list",{status:supportFilter,limit:150}); supportTicketsData=data.tickets||[]; renderTicketList(sortedSupportTickets());
+    const data=await api("support_list",{status:supportFilter,search:els.supportSearch?.value||"",limit:150}); supportTicketsData=data.tickets||[]; renderTicketList(sortedSupportTickets());
     if(selectedTicketId && !supportTicketsData.some(t=>t.id===selectedTicketId)){selectedTicketId=null;els.supportDetail.className="surface support-empty";els.supportDetail.textContent="Select a support message.";}
   } catch(error){els.ticketList.innerHTML=`<div class="muted">${escapeHtml(error.message)}</div>`;}
 }
 
-function renderTicketList(tickets){els.ticketList.innerHTML="";if(!tickets.length){els.ticketList.innerHTML='<div class="muted">No support messages.</div>';return;}tickets.forEach(ticket=>{const button=document.createElement("button");button.type="button";button.className=`ticket ${ticket.isRead?"":"unread"} ${ticket.id===selectedTicketId?"active":""}`;markTimedOutput(button,ticket.lastActivityAt);button.innerHTML=`<div class="ticket-head"><span class="ticket-from"></span><span class="ticket-time">${escapeHtml(formatDate(ticket.lastActivityAt))}</span></div><div class="ticket-subject"></div><div class="ticket-snippet"></div>`;button.querySelector(".ticket-from").textContent=ticket.fromName||ticket.fromEmail;button.querySelector(".ticket-subject").textContent=ticket.subject;button.querySelector(".ticket-snippet").textContent=ticket.snippet;button.addEventListener("click",()=>openTicket(ticket.id));els.ticketList.appendChild(button);});}
+function renderTicketList(tickets){els.ticketList.innerHTML="";if(!tickets.length){els.ticketList.innerHTML='<div class="muted">No support messages.</div>';return;}tickets.forEach(ticket=>{const button=document.createElement("button");button.type="button";button.className=`ticket ${ticket.isRead?"":"unread"} ${ticket.id===selectedTicketId?"active":""}`;markTimedOutput(button,ticket.lastActivityAt);button.innerHTML=`<div class="ticket-head"><span class="ticket-from"></span><span class="ticket-time">${escapeHtml(formatDate(ticket.lastActivityAt))}</span></div><div class="ticket-subject"></div><div class="ticket-snippet"></div><div class="ticket-context"></div>`;button.querySelector(".ticket-from").textContent=ticket.fromName||ticket.fromEmail;button.querySelector(".ticket-subject").textContent=`CW-${ticket.id} · ${titleCase(ticket.status)}`;button.querySelector(".ticket-snippet").textContent=ticket.snippet;button.querySelector(".ticket-context").textContent=[ticket.source==="WEB"?"Web":"Email",ticket.siteName].filter(Boolean).join(" · ");button.addEventListener("click",()=>openTicket(ticket.id));els.ticketList.appendChild(button);});}
 
-async function openTicket(ticketId){selectedTicketId=ticketId;els.supportDetail.className="surface";els.supportDetail.innerHTML='<div class="muted">Loading…</div>';try{const data=await api("support_get",{ticketId});renderTicket(data.ticket,data.replies||[]);await loadSupport();}catch(error){els.supportDetail.textContent=error.message;}}
+async function openTicket(ticketId){selectedTicketId=ticketId;els.supportDetail.className="surface";els.supportDetail.innerHTML='<div class="muted">Loading…</div>';try{const data=await api("support_get",{ticketId});renderTicket(data.ticket,data.replies||[],data.customerContext||{});await loadSupport();}catch(error){els.supportDetail.textContent=error.message;}}
 
-function renderTicket(ticket,replies){els.supportDetail.innerHTML="";const head=document.createElement("div");head.className="panel-head";const title=document.createElement("div");const h=document.createElement("h2");h.textContent=ticket.subject;const p=document.createElement("p");p.textContent=`${ticket.fromName?ticket.fromName+" · ":""}${ticket.fromEmail}`;title.append(h,p);const controls=document.createElement("div");controls.style.display="flex";controls.style.flexWrap="wrap";controls.style.gap="7px";["OPEN","PENDING","CLOSED"].forEach(status=>{const b=document.createElement("button");b.type="button";b.className=`button small ${ticket.status===status?"primary":""}`;b.textContent=status==="PENDING"?"Waiting":titleCase(status);b.addEventListener("click",()=>changeTicketStatus(ticket.id,status));controls.appendChild(b);});const deleteButton=document.createElement("button");deleteButton.type="button";deleteButton.className="button small danger";deleteButton.textContent="Delete";deleteButton.addEventListener("click",()=>deleteSupportTicket(ticket.id,deleteButton));controls.appendChild(deleteButton);head.append(title,controls);els.supportDetail.appendChild(head);
+function renderTicket(ticket,replies,customerContext){els.supportDetail.innerHTML="";const head=document.createElement("div");head.className="panel-head";const title=document.createElement("div");const h=document.createElement("h2");h.textContent=`CW-${ticket.id} · ${ticket.subject}`;const p=document.createElement("p");p.textContent=`${ticket.fromName?ticket.fromName+" · ":""}${ticket.fromEmail}`;title.append(h,p);const controls=document.createElement("div");controls.style.display="flex";controls.style.flexWrap="wrap";controls.style.gap="7px";["NEW","OPEN","RESOLVED"].forEach(status=>{const b=document.createElement("button");b.type="button";b.className=`button small ${ticket.status===status?"primary":""}`;b.textContent=titleCase(status);b.addEventListener("click",()=>changeTicketStatus(ticket.id,status));controls.appendChild(b);});head.append(title,controls);els.supportDetail.appendChild(head);const context=document.createElement("div");context.className="support-context";context.textContent=[ticket.source==="WEB"?"Web request":"Email",ticket.siteName,ticket.machineId?`Machine ${ticket.machineId}`:"",ticket.sourceRoute].filter(Boolean).join(" · ");els.supportDetail.appendChild(context);els.supportDetail.appendChild(renderSupportCustomerContext(ticket,customerContext));
   const conversation=document.createElement("div");conversation.className="conversation";conversation.appendChild(makeBubble("Customer",ticket.receivedAt,ticket.body,false));replies.forEach(reply=>{const inbound=String(reply.direction||"").toUpperCase()==="INBOUND";conversation.appendChild(makeBubble(inbound?"Customer":"Support",reply.sentAt,reply.body,!inbound));});els.supportDetail.appendChild(conversation);
   const form=document.createElement("form");form.style.marginTop="14px";form.innerHTML='<div class="field"><label>Reply</label><textarea required placeholder="Write a clear reply…"></textarea></div><div style="display:flex;justify-content:flex-end;margin-top:9px"><button class="button primary" type="submit">Send reply</button></div><div class="message" aria-live="polite"></div>';form.addEventListener("submit",event=>sendSupportReply(event,ticket.id));els.supportDetail.appendChild(form);}
+
+function renderSupportCustomerContext(ticket,context){
+  const section=document.createElement("section");section.className="support-customer-data";const heading=document.createElement("div");heading.className="support-data-heading";const headingText=document.createElement("div");const title=document.createElement("h3");title.textContent="Customer context";const note=document.createElement("p");note.textContent="Private support data resolved from verified CircuitWash records. It is not shown on the customer form.";headingText.append(title,note);const match=document.createElement("span");match.className="pill";match.textContent=context.matchedBy?`Matched by ${String(context.matchedBy).toLowerCase().replaceAll("_"," ")}`:"Email context";heading.append(headingText,match);section.appendChild(heading);
+  const grid=document.createElement("div");grid.className="support-data-grid";
+  const accessCard=document.createElement("article");accessCard.className="support-data-card";const accessTitle=document.createElement("h4");accessTitle.textContent="Access & entitlement";accessCard.appendChild(accessTitle);const access=context.access;
+  if(access){const codeRow=addSupportDataRow(accessCard,"Access code",access.maskedCode||"—",true);if(access.code){const reveal=document.createElement("button");reveal.type="button";reveal.className="support-reveal";reveal.textContent="Reveal";let revealed=false;reveal.addEventListener("click",()=>{revealed=!revealed;codeRow.value.textContent=revealed?access.code:access.maskedCode;reveal.textContent=revealed?"Hide":"Reveal";});codeRow.row.appendChild(reveal);}addSupportDataRow(accessCard,"Status",access.exists?(access.active?"Active":"Inactive"):"Not found");addSupportDataRow(accessCard,"Site",access.siteName||access.siteId||"Unknown");addSupportDataRow(accessCard,"This week",`${formatNumber(access.weeklyUsed)} used · ${formatNumber(access.weeklyRemaining)} remaining`);addSupportDataRow(accessCard,"Allowance",`${formatNumber(access.weeklyBaseLimit)} included${access.weeklyBonus?` + ${formatNumber(access.weeklyBonus)} add-on`:""}`);addSupportDataRow(accessCard,"Total uses",formatNumber(access.totalUsed));addSupportDataRow(accessCard,"Last used",access.lastUsedAt?formatDateTime(access.lastUsedAt):"Never");addSupportDataRow(accessCard,"Expires",access.expiresAt?formatDateTime(access.expiresAt):"No expiry");}else{const empty=document.createElement("p");empty.className="muted";empty.textContent="No verified access code was available on this device.";accessCard.appendChild(empty);}
+  const accountCard=document.createElement("article");accountCard.className="support-data-card";const accountTitle=document.createElement("h4");accountTitle.textContent="Customer history";accountCard.appendChild(accountTitle);addSupportDataRow(accountCard,"Email",ticket.fromEmail||"—");addSupportDataRow(accountCard,"Orders",`${formatNumber(context.summary?.completedOrders||0)} completed · ${formatNumber(context.summary?.totalOrders||0)} total`);const revenue=(context.summary?.revenue||[]).map(item=>money(item.amount,item.currency)).join(" + ")||"£0.00";addSupportDataRow(accountCard,"Paid revenue",revenue);addSupportDataRow(accountCard,"Linked order",context.linkedOrderId||"No direct link",Boolean(context.linkedOrderId));
+  const environmentCard=document.createElement("article");environmentCard.className="support-data-card";const environmentTitle=document.createElement("h4");environmentTitle.textContent="Request environment";environmentCard.appendChild(environmentTitle);addSupportDataRow(environmentCard,"Source",ticket.source==="WEB"?"Support form":"Email");addSupportDataRow(environmentCard,"Route",ticket.sourceRoute||"—",true);addSupportDataRow(environmentCard,"Machine",ticket.machineId||"Not captured");addSupportDataRow(environmentCard,"Session",ticket.sessionReference||"Not captured",Boolean(ticket.sessionReference));addSupportDataRow(environmentCard,"Browser/device",ticket.userAgent||"Not captured");grid.append(accessCard,accountCard,environmentCard);section.appendChild(grid);
+  const orders=document.createElement("div");orders.className="support-order-history";const ordersHead=document.createElement("div");ordersHead.className="support-order-head";const ordersTitle=document.createElement("h4");ordersTitle.textContent="Matching orders";const ordersCount=document.createElement("span");ordersCount.textContent=`${formatNumber(context.orders?.length||0)} found`;ordersHead.append(ordersTitle,ordersCount);orders.appendChild(ordersHead);if(context.orders?.length){context.orders.forEach(order=>orders.appendChild(renderSupportOrder(order,context.linkedOrderId)));}else{const empty=document.createElement("p");empty.className="muted";empty.textContent="No canonical orders match this email or access context.";orders.appendChild(empty);}section.appendChild(orders);return section;
+}
+
+function addSupportDataRow(card,labelText,valueText,mono=false){const row=document.createElement("div");row.className="support-data-row";const label=document.createElement("span");label.textContent=labelText;const value=document.createElement("strong");if(mono)value.className="mono";value.textContent=valueText;row.append(label,value);card.appendChild(row);return{row,value};}
+
+function renderSupportOrder(order,linkedOrderId){const item=document.createElement("details");item.className=`support-order ${order.orderId===linkedOrderId?"linked":""}`;const summary=document.createElement("summary");const main=document.createElement("span");const name=document.createElement("strong");name.textContent=orderTypeLabel(order.orderType,order.quantity);const meta=document.createElement("small");meta.textContent=`${order.siteName} · ${formatDateTime(order.purchasedAt)}`;main.append(name,meta);const amount=document.createElement("span");amount.className="support-order-amount";amount.textContent=`${money(order.amount,order.currency)} · ${titleCase(order.status)}`;summary.append(main,amount);const detail=document.createElement("div");detail.className="support-order-detail";addSupportDataRow(detail,"Order",order.orderId||"—",true);addSupportDataRow(detail,"Payment",titleCase(order.paymentMethod||"unknown"));addSupportDataRow(detail,"Provider reference",order.providerReference||"Not stored",true);addSupportDataRow(detail,"Access code",order.accessCodeMasked||"Not linked",true);item.append(summary,detail);return item;}
 
 function makeBubble(label,date,body,isReply){const div=document.createElement("div");div.className=`bubble ${isReply?"reply":""}`;const meta=document.createElement("div");meta.className="bubble-meta";const a=document.createElement("span");a.textContent=label;const b=document.createElement("span");b.textContent=formatDateTime(date);meta.append(a,b);const content=document.createElement("div");content.className="bubble-body";content.textContent=body;div.append(meta,content);return div;}
 
@@ -1676,28 +1333,11 @@ async function sendSupportReply(event,ticketId){event.preventDefault();const for
 
 async function changeTicketStatus(ticketId,status){try{await api("support_status",{ticketId,status});await openTicket(ticketId);await loadDashboard();}catch(error){alert(error.message);}}
 
-async function deleteSupportTicket(ticketId,button){
-  const confirmed=window.confirm("Permanently delete this support conversation and all replies? This cannot be undone.");
-  if(!confirmed)return;
-  button.disabled=true;
-  try{
-    await api("support_delete",{ticketId});
-    selectedTicketId=null;
-    els.supportDetail.className="surface support-empty";
-    els.supportDetail.textContent="Select a support message.";
-    await Promise.all([loadSupport(),loadDashboard()]);
-  }catch(error){
-    alert(error.message);
-    button.disabled=false;
-  }
-}
-
 const SORT_ACCESSORS = {
-  recentOrders: { date: item => dateValue(item.completedAt || item.createdAt), siteName: item => item.siteName, paymentMethod: item => item.paymentMethod, amount: item => Number(item.amount) || 0, emailStatus: item => item.emailStatus },
-  orders: { date: item => dateValue(item.completedAt || item.createdAt), orderId: item => item.orderId, siteName: item => item.siteName, paymentMethod: item => item.paymentMethod, code: item => item.code, email: item => item.email, amount: item => Number(item.amount) || 0, status: item => item.status },
+  recentOrders: { date: item => dateValue(item.completedAt || item.createdAt), siteName: item => item.siteName, orderType: item => item.orderType, paymentMethod: item => item.paymentMethod, amount: item => Number(item.amount) || 0, emailStatus: item => item.emailStatus },
+  orders: { date: item => dateValue(item.completedAt || item.createdAt), orderId: item => item.orderId, siteName: item => item.siteName, orderType: item => item.orderType, paymentMethod: item => item.paymentMethod, code: item => item.code, email: item => item.email, amount: item => Number(item.amount) || 0, status: item => item.status },
   codes: { createdAt: item => dateValue(item.createdAt), code: item => item.code, siteName: item => item.siteName, source: item => item.source, weeklyUses: item => Number(item.weeklyUses) || 0, weeklyLimit: item => Number(item.weeklyLimit) || 0, maxTotalUses: item => Number(item.maxTotalUses) || Number.MAX_SAFE_INTEGER, uses: item => Number(item.uses) || 0, lastUsedAt: item => dateValue(item.lastUsedAt), expiresAt: item => dateValue(item.expiresAt), active: item => item.active ? 1 : 0 },
   promos: { createdAt: item => dateValue(item.createdAt), code: item => item.code, discountValue: item => Number(item.discountValue) || 0, siteName: item => item.siteName || "", maxRedemptions: item => Number(item.maxRedemptions) || Number.MAX_SAFE_INTEGER, successfulOrders: item => Number(item.successfulOrders) || 0, createdOrders: item => Number(item.createdOrders) || 0, customers: item => Number(item.customers) || 0, discountTotal: item => Number(item.discountTotal) || 0, netRevenue: item => Number(item.netRevenue) || 0, lastUsedAt: item => dateValue(item.lastUsedAt), active: item => item.active ? 1 : 0 },
-  analyticsHits: { createdAt: item => dateValue(item.createdAt), siteName: item => item.siteName, searchQuery: item => item.searchQuery, searchMode: item => item.searchMode, referrer: item => item.referrer },
   feedbackResponses: { submittedAt: item => dateValue(item.submittedAt), email: item => item.email, siteName: item => item.siteName, rating: item => Number(item.rating) || 0, recommend: item => item.recommend, comments: item => item.comments },
   feedbackInvitations: { sentAt: item => dateValue(item.sentAt || item.createdAt), email: item => item.email, siteName: item => item.siteName, status: item => item.status, response: item => dateValue(item.respondedAt) || item.error || "" }
 };
@@ -1761,7 +1401,6 @@ function changeSort(tableName, key) {
   else if (tableName === "orders") renderFilteredOrders();
   else if (tableName === "codes") renderCodes();
   else if (tableName === "promos") renderPromos();
-  else if (tableName === "analyticsHits") renderAnalyticsHits(sortItems("analyticsHits", analyticsData?.recentHits || []));
   else if (tableName === "feedbackResponses") renderFeedbackResponses();
   else if (tableName === "feedbackInvitations") renderFeedbackInvitations();
 }
@@ -1786,6 +1425,7 @@ function formatDate(value){if(!value)return"—";return new Date(value).toLocale
 function formatDateTime(value){if(!value)return"—";return new Date(value).toLocaleString([], {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});}
 function shortHash(value){const hash=String(value||"").trim();return hash?`${hash.slice(0,12)}...`:"\u2014";}
 function titleCase(value){return String(value||"").replace(/[_-]/g," ").replace(/\b\w/g,c=>c.toUpperCase());}
+function orderTypeLabel(value,quantity){const type=String(value||"access_code").trim().toLowerCase();if(type==="weekly_activation_addon"){const count=Number(quantity)||0;return count>1?`Extra activations ×${count}`:"Extra activation";}if(type==="access_code")return"Access code";return titleCase(type);}
 function paymentMethodLabel(value){
   const method=String(value||"").trim().toLowerCase();
   if(method==="card")return"Card";
@@ -1876,7 +1516,10 @@ initializeSortableHeaders();
 initializeTimedOutputs();
 
 els.loginForm.addEventListener("submit",event=>{event.preventDefault();signIn(els.adminCodeInput.value);});
-els.logoutBtn.addEventListener("click",()=>signOut()); els.refreshBtn.addEventListener("click",refreshActive); els.reloadAnalyticsBtn.addEventListener("click",loadAnalytics); els.reloadOrdersBtn.addEventListener("click",loadOrders); els.reloadCodesBtn.addEventListener("click",loadCodes); els.reloadPromosBtn.addEventListener("click",loadPromos); els.reloadStoreBtn.addEventListener("click",loadStore); els.reloadFeedbackBtn.addEventListener("click",loadFeedback); els.reloadSupportBtn.addEventListener("click",loadSupport);
+els.logoutBtn.addEventListener("click",()=>signOut()); els.refreshBtn.addEventListener("click",refreshActive); els.reloadAnalyticsBtn.addEventListener("click",loadAnalytics); els.reloadOrdersBtn.addEventListener("click",loadOrders); els.reloadCodesBtn.addEventListener("click",loadCodes); els.reloadPromosBtn.addEventListener("click",loadPromos); els.reloadFeedbackBtn.addEventListener("click",loadFeedback); els.reloadSupportBtn.addEventListener("click",loadSupport);
+els.analyticsRange.addEventListener("change",loadAnalytics);
+els.analyticsHitsPrev.addEventListener("click",()=>loadAnalyticsHitPage(analyticsHitPaging.history.at(-1) || null,"newer"));
+els.analyticsHitsNext.addEventListener("click",()=>loadAnalyticsHitPage(analyticsHitPaging.nextCursor,"older"));
 els.orderStatusFilter.addEventListener("change",()=>{setMessage(els.ordersMessage,"","");loadOrders();});
 els.orderSearch.addEventListener("input",()=>{orderSearchTerm=els.orderSearch.value;renderFilteredOrders();});
 els.clearOrderSearchBtn.addEventListener("click",()=>{els.orderSearch.value="";orderSearchTerm="";renderFilteredOrders();});
@@ -1911,29 +1554,16 @@ els.reloadFreeTrialsBtn.addEventListener("click",loadFreeTrials);
 els.trialLimitSiteSearch.addEventListener("input",()=>{clearTimeout(trialLimitSiteSearchTimer);trialLimitSiteSearchTimer=setTimeout(searchTrialLimitSites,230);});
 els.saveTrialLimitBtn.addEventListener("click",saveTrialSiteLimit);
 els.clearTrialLimitBtn.addEventListener("click",()=>clearTrialSiteLimit());
-els.createStoreMemberBtn.addEventListener("click",createStoreMember);
-els.storeInviteDelivery.addEventListener("change",updateStoreInviteDelivery);
-els.storeInviteDeliveryOptions.querySelectorAll('input[name="storeInviteDeliveryChoice"]').forEach((input) => input.addEventListener("change", () => {
-  if (!input.checked) return;
-  els.storeInviteDelivery.value = input.value;
-  updateStoreInviteDelivery();
-}));
-els.storeCustomerFilter.addEventListener("input",()=>{storeCustomerFilter=els.storeCustomerFilter.value;renderStoreInviteCustomers();});
-els.storeClearCustomerFilterBtn.addEventListener("click",()=>{els.storeCustomerFilter.value="";storeCustomerFilter="";renderStoreInviteCustomers();els.storeCustomerFilter.focus();});
-els.saveStoreProductBtn.addEventListener("click",saveStoreProduct);
-els.cancelStoreProductEditBtn.addEventListener("click",resetStoreProductForm);
-els.storeProductImageUrl.addEventListener("input",updateStoreImagePreview);
-els.storeCleanupStaleOrdersBtn.addEventListener("click",cleanupStoreStaleOrders);
 els.feedbackRecipientFilter.addEventListener("input",()=>{feedbackRecipientFilter=els.feedbackRecipientFilter.value;renderFeedbackRecipients();});
 els.feedbackEnabledInput.addEventListener("change",saveFeedbackEnabled);
 els.feedbackManualEmails.addEventListener("input",updateFeedbackSelectionCount);
 els.selectVisibleRecipientsBtn.addEventListener("click",selectVisibleFeedbackRecipients); els.clearRecipientsBtn.addEventListener("click",clearFeedbackRecipients); els.sendFeedbackBtn.addEventListener("click",sendFeedbackRequests);
 document.querySelectorAll("[data-support-filter]").forEach(button=>button.addEventListener("click",()=>{supportFilter=button.dataset.supportFilter;document.querySelectorAll("[data-support-filter]").forEach(item=>item.classList.toggle("active",item===button));loadSupport();}));
+els.supportSearch?.addEventListener("input",()=>{clearTimeout(supportSearchTimer);supportSearchTimer=setTimeout(loadSupport,220);});
 document.querySelector(".dashboard-trend")?.addEventListener("toggle",(event)=>{if(event.currentTarget.open&&dashboardData)requestAnimationFrame(()=>drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP"));});
 window.addEventListener("hashchange",()=>{const tab=location.hash.replace(/^#/,"");if(adminCode&&tab&&tab!==activeTab&&$(`tab-${tab}`))openTab(tab);});
 window.addEventListener("keydown",(event)=>{if(event.key!=="Escape")return;if(!els.promoEditOverlay.classList.contains("hidden"))closePromoEditor();else closeControlDrawer();});
 window.addEventListener("resize",()=>{if(dashboardData&&!$("tab-dashboard").classList.contains("hidden"))drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP");});
 
 try { els.staySignedInInput.checked = Boolean(localStorage.getItem(SESSION_KEY)); } catch (_) {}
-updateStoreInviteDelivery();
 if(adminCode) signIn(adminCode); else setTimeout(()=>els.adminCodeInput.focus(),0);

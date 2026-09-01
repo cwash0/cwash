@@ -1,5 +1,6 @@
 let MACHINES = [];
 let CURRENT_SITE_NAME = "";
+let CURRENT_SITE_ID = "";
 let selectedMachineKey = "";
 let connectedDeviceName = "";
 let lastStartedMachineLabel = "";
@@ -19,14 +20,9 @@ let upgradePaymentReady = false;
 let upgradeWalletAvailable = false;
 let upgradeCardExpanded = true;
 let iosBluefyPromptRequested = false;
-const changeSiteSearchMode = "all";
 let changeSiteSearchTimer = null;
-let changeSiteSearchRequest = 0;
-let changeSiteCompactHeight = 0;
-let changeSiteResizeFrame = 0;
-let changeSiteScrollResetFrame = 0;
-let changeSiteFullViewportHeight = 0;
-let changeSiteSearchStarted = false;
+let changeSiteHistoryActive = false;
+let activationSiteSelector = null;
 let bluefyCopyToastTimer = null;
 
 const ACTIVATE_SESSION_KEY = "laundryActivateAccessCode";
@@ -64,7 +60,7 @@ function mountUpgradePaymentSheet() {
         <div id="paymentSheetHeader" class="payment-sheet-header">
           <div>
             <h2 id="paymentSheetTitle">Choose payment method</h2>
-            <p id="paymentSheetSubtitle">2 extra activations for this week.</p>
+            <p id="paymentSheetSubtitle">3 extra activations for this week.</p>
           </div>
           <button id="paymentSheetCloseBtn" class="payment-sheet-close" type="button" aria-label="Close payment options">Close</button>
         </div>
@@ -121,9 +117,9 @@ const els = {
   changeSiteOverlay: document.getElementById("changeSiteOverlay"),
   closeChangeSiteBtn: document.getElementById("closeChangeSiteBtn"),
   changeSiteSearch: document.getElementById("changeSiteSearch"),
+  changeSiteSearchSpinner: document.getElementById("changeSiteSearchSpinner"),
   changeSiteResults: document.getElementById("changeSiteResults"),
   changeSiteMessage: document.getElementById("changeSiteMessage"),
-  storeNavLink: document.getElementById("storeNavLink"),
   logoutBtn: document.getElementById("logoutBtn"),
   connectBtn: document.getElementById("connectBtn"),
   connectionModule: document.getElementById("connectionModule"),
@@ -162,11 +158,18 @@ const els = {
   upgradePaymentElement: upgradePaymentRoot.querySelector("#paymentElement"),
   upgradePaymentSubmitBtn: upgradePaymentRoot.querySelector("#stripeSubmitBtn"),
   upgradePaymentMessage: upgradePaymentRoot.querySelector("#upgradePaymentMessage"),
-  storeInviteOverlay: document.getElementById("storeInviteOverlay"),
-  storeInviteCode: document.getElementById("storeInviteCode"),
-  openStoreInviteLink: document.getElementById("openStoreInviteLink"),
-  closeStoreInviteBtn: document.getElementById("closeStoreInviteBtn"),
 };
+
+activationSiteSelector = window.CircuitWashSiteSelector.create({
+  input: els.changeSiteSearch,
+  results: els.changeSiteResults,
+  spinner: els.changeSiteSearchSpinner,
+  currentSiteId: () => CURRENT_SITE_ID,
+  onSelect: (site, button, state) => {
+    if (state.selected || String(site.id || "") === CURRENT_SITE_ID) closeChangeSite();
+    else changeActivationSite(site, button);
+  }
+});
 
 const enc = new TextEncoder();
 const dec = new TextDecoder("utf-8", { fatal: false });
@@ -378,8 +381,9 @@ async function selectMachine(key) {
   updateMachinesInUseNotice();
 }
 
-function setSiteTitle(name) {
+function setSiteTitle(name, siteId = "") {
   CURRENT_SITE_NAME = String(name || "").trim();
+  CURRENT_SITE_ID = String(siteId || "").trim();
   els.siteTitle.textContent = CURRENT_SITE_NAME;
   els.siteTitle.title = CURRENT_SITE_NAME;
   els.changeSiteBtn?.classList.toggle("hidden", !CURRENT_SITE_NAME || !activeAccessCode);
@@ -388,214 +392,38 @@ function setSiteTitle(name) {
 function openChangeSite() {
   if (!activeAccessCode) return;
   clearTimeout(changeSiteSearchTimer);
-  changeSiteSearchRequest += 1;
-  els.changeSiteOverlay.classList.remove("is-search-focused");
-  els.changeSiteOverlay.classList.remove("is-search-medium");
-  els.changeSiteOverlay.classList.remove("has-search-query");
   els.changeSiteOverlay.classList.remove("hidden");
   document.documentElement.classList.add("change-site-open");
   document.body.classList.add("change-site-open");
-  els.changeSiteSearch.value = "";
-  els.changeSiteResults.innerHTML = "";
-  setChangeSiteResultsVisible(false);
+  activationSiteSelector.reset();
   els.changeSiteMessage.textContent = "";
-  const dialog = els.changeSiteOverlay.querySelector(".change-site-dialog");
-  dialog?.style.removeProperty("height");
-  dialog?.style.removeProperty("max-height");
-  changeSiteSearchStarted = false;
-  changeSiteFullViewportHeight = Math.max(1, Math.round(window.visualViewport?.height || window.innerHeight));
-  changeSiteCompactHeight = Math.round(dialog?.getBoundingClientRect().height || 0);
-  updateChangeSiteViewport();
-  resetChangeSiteResultsScroll();
+  if (!changeSiteHistoryActive) {
+    history.pushState({ ...(history.state || {}), circuitWashChangeSite: true }, "", location.href);
+    changeSiteHistoryActive = true;
+  }
+  setTimeout(() => els.changeSiteSearch.focus(), 0);
 }
 
-function closeChangeSite() {
+function closeChangeSite({ fromPopState = false } = {}) {
+  if (els.changeSiteOverlay.classList.contains("hidden")) return;
   clearTimeout(changeSiteSearchTimer);
-  changeSiteSearchRequest += 1;
   els.changeSiteSearch.blur();
   els.changeSiteOverlay.classList.add("hidden");
-  els.changeSiteOverlay.classList.remove("is-search-focused");
-  els.changeSiteOverlay.classList.remove("is-search-medium");
-  els.changeSiteOverlay.classList.remove("has-search-query");
   document.documentElement.classList.remove("change-site-open");
   document.body.classList.remove("change-site-open");
-  els.changeSiteSearch.value = "";
-  els.changeSiteResults.innerHTML = "";
-  setChangeSiteResultsVisible(false);
+  activationSiteSelector.reset();
   els.changeSiteMessage.textContent = "";
-  const dialog = els.changeSiteOverlay.querySelector(".change-site-dialog");
-  dialog?.style.removeProperty("height");
-  dialog?.style.removeProperty("max-height");
-  changeSiteCompactHeight = 0;
-  changeSiteFullViewportHeight = 0;
-  changeSiteSearchStarted = false;
-  resetChangeSiteResultsScroll();
+  const shouldGoBack = changeSiteHistoryActive && !fromPopState;
+  changeSiteHistoryActive = false;
+  if (shouldGoBack) history.back();
 }
 
-function resetChangeSiteResultsScroll() {
-  els.changeSiteResults.scrollTop = 0;
-  cancelAnimationFrame(changeSiteScrollResetFrame);
-  changeSiteScrollResetFrame = requestAnimationFrame(() => {
-    changeSiteScrollResetFrame = 0;
-    els.changeSiteResults.scrollTop = 0;
-  });
-}
-
-function updateChangeSiteViewport() {
-  if (els.changeSiteOverlay.classList.contains("hidden")) return;
-  const viewport = window.visualViewport;
-  const height = Math.max(1, Math.round(viewport?.height || window.innerHeight));
-  const offsetTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
-  if (!changeSiteFullViewportHeight || !changeSiteSearchStarted || height > changeSiteFullViewportHeight) {
-    changeSiteFullViewportHeight = height;
-  }
-  els.changeSiteOverlay.style.setProperty("--change-site-viewport-height", `${height}px`);
-  els.changeSiteOverlay.style.setProperty("--change-site-viewport-top", `${offsetTop}px`);
-  syncChangeSiteSearchState(height);
-  scheduleChangeSiteSheetSize();
-}
-
-function syncChangeSiteSearchState(viewportHeight) {
-  const overlay = els.changeSiteOverlay;
-  const wasKeyboardOpen = overlay.classList.contains("is-search-focused");
-  const lostHeight = Math.max(0, changeSiteFullViewportHeight - viewportHeight);
-  const openThreshold = Math.max(140, Math.round(changeSiteFullViewportHeight * 0.16));
-  const closeThreshold = Math.max(80, Math.round(changeSiteFullViewportHeight * 0.1));
-  const keyboardOpen = changeSiteSearchStarted && lostHeight > (wasKeyboardOpen ? closeThreshold : openThreshold);
-  const hasSearchContent = Boolean(els.changeSiteSearch.value.trim())
-    || (!els.changeSiteResults.classList.contains("hidden") && els.changeSiteResults.children.length > 0);
-  const medium = changeSiteSearchStarted && !keyboardOpen && hasSearchContent;
-
-  overlay.classList.toggle("is-search-focused", keyboardOpen);
-  overlay.classList.toggle("is-search-medium", medium);
-}
-
-function expandChangeSiteSearch() {
-  if (els.changeSiteOverlay.classList.contains("hidden")) return;
-  const dialog = els.changeSiteOverlay.querySelector(".change-site-dialog");
-  if (!changeSiteSearchStarted) {
-    changeSiteCompactHeight = Math.round(dialog?.getBoundingClientRect().height || 0);
-    changeSiteFullViewportHeight = Math.max(
-      changeSiteFullViewportHeight,
-      Math.round(window.visualViewport?.height || window.innerHeight)
-    );
-    if (dialog && changeSiteCompactHeight) dialog.style.height = `${changeSiteCompactHeight}px`;
-  }
-  changeSiteSearchStarted = true;
-  resetChangeSiteResultsScroll();
-  updateChangeSiteViewport();
-}
-
-function scheduleChangeSiteSheetSize() {
-  cancelAnimationFrame(changeSiteResizeFrame);
-  changeSiteResizeFrame = requestAnimationFrame(updateChangeSiteSheetSize);
-}
-
-function updateChangeSiteSheetSize() {
-  changeSiteResizeFrame = 0;
-  const keyboardOpen = els.changeSiteOverlay.classList.contains("is-search-focused");
-  const medium = els.changeSiteOverlay.classList.contains("is-search-medium");
-  if (!keyboardOpen && !medium) return;
-  const dialog = els.changeSiteOverlay.querySelector(".change-site-dialog");
-  const searchField = els.changeSiteOverlay.querySelector(".change-site-search-field");
-  if (!dialog || !searchField) return;
-
-  const viewport = window.visualViewport;
-  const viewportHeight = Math.max(1, Math.round(viewport?.height || window.innerHeight));
-  const topGap = Math.min(28, Math.max(10, Math.round(viewportHeight * 0.04)));
-  const maxHeight = Math.max(120, viewportHeight - topGap);
-  const minimumHeight = Math.min(changeSiteCompactHeight || dialog.getBoundingClientRect().height, maxHeight);
-  const resultsVisible = !els.changeSiteResults.classList.contains("hidden") && els.changeSiteResults.children.length > 0;
-
-  let desiredHeight = minimumHeight;
-  if (keyboardOpen && resultsVisible) {
-    desiredHeight = maxHeight;
-  } else if (medium && resultsVisible) {
-    const dialogRect = dialog.getBoundingClientRect();
-    const fieldRect = searchField.getBoundingClientRect();
-    const dialogStyle = getComputedStyle(dialog);
-    const resultsStyle = getComputedStyle(els.changeSiteResults);
-    const resultsMargin = parseFloat(resultsStyle.marginTop) || 0;
-    const paddingBottom = parseFloat(dialogStyle.paddingBottom) || 0;
-    const messageHeight = els.changeSiteMessage.textContent.trim() ? els.changeSiteMessage.getBoundingClientRect().height : 0;
-    const fixedHeight = Math.max(0, fieldRect.bottom - dialogRect.top) + resultsMargin + paddingBottom + messageHeight + 1;
-    const firstResult = els.changeSiteResults.querySelector(".change-site-result");
-    const resultHeight = firstResult?.getBoundingClientRect().height || 70;
-    const mediumResultsHeight = Math.min(els.changeSiteResults.scrollHeight, resultHeight * 3.6);
-    const mediumHeightLimit = Math.max(minimumHeight, Math.round(viewportHeight * 0.66));
-    desiredHeight = Math.min(mediumHeightLimit, Math.max(minimumHeight, Math.ceil(fixedHeight + mediumResultsHeight)));
-  }
-
-  dialog.style.maxHeight = `${maxHeight}px`;
-  dialog.style.height = `${Math.min(maxHeight, desiredHeight)}px`;
-}
-
-function setChangeSiteResultsVisible(visible) {
-  els.changeSiteResults.classList.toggle("hidden", !visible);
-  els.changeSiteSearch.setAttribute("aria-expanded", visible ? "true" : "false");
-  scheduleChangeSiteSheetSize();
-}
-
-async function searchChangeSites(requestId = changeSiteSearchRequest) {
-  const query = els.changeSiteSearch.value.trim();
-  if (query.length < 2) {
-    setChangeSiteResultsVisible(false);
-    resetChangeSiteResultsScroll();
-    return;
-  }
-  els.changeSiteResults.innerHTML = '<div class="change-site-result-status loading"><span class="change-site-result-spinner" aria-hidden="true"></span><span>Finding laundry sites…</span></div>';
-  setChangeSiteResultsVisible(true);
-  resetChangeSiteResultsScroll();
-  scheduleChangeSiteSheetSize();
-  try {
-    const response = await fetch("/.netlify/functions/public-sites", {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, mode: changeSiteSearchMode })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) throw new Error("Search failed");
-    if (requestId !== changeSiteSearchRequest) return;
-    renderChangeSiteResults(data.sites || []);
-  } catch (_) {
-    if (requestId !== changeSiteSearchRequest) return;
-    els.changeSiteResults.innerHTML = '<div class="change-site-result-status"><span>Could not search laundry sites. Try again.</span></div>';
-    resetChangeSiteResultsScroll();
-    scheduleChangeSiteSheetSize();
-  }
+async function searchChangeSites() {
+  return activationSiteSelector.search();
 }
 
 function renderChangeSiteResults(sites) {
-  els.changeSiteResults.innerHTML = "";
-  if (!sites.length) {
-    els.changeSiteResults.innerHTML = '<div class="change-site-result-status"><strong>No laundry sites found</strong><span>Check the spelling or try an address or postcode.</span></div>';
-    resetChangeSiteResultsScroll();
-    scheduleChangeSiteSheetSize();
-    return;
-  }
-  sites.forEach((site) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "change-site-result";
-    const title = document.createElement("strong");
-    title.textContent = site.name;
-    button.appendChild(title);
-    if (site.address) {
-      const address = document.createElement("span");
-      address.textContent = site.address;
-      button.appendChild(address);
-    }
-    const chevron = document.createElement("span");
-    chevron.className = "change-site-result-chevron";
-    chevron.setAttribute("aria-hidden", "true");
-    chevron.textContent = "›";
-    button.appendChild(chevron);
-    button.addEventListener("click", () => changeActivationSite(site, button));
-    els.changeSiteResults.appendChild(button);
-  });
-  resetChangeSiteResultsScroll();
-  scheduleChangeSiteSheetSize();
+  activationSiteSelector.render(sites, sites.length ? String() : 'No matching sites');
 }
 
 async function changeActivationSite(site, button) {
@@ -618,6 +446,7 @@ async function changeActivationSite(site, button) {
     MACHINES = Array.isArray(data.machines) ? data.machines : [];
     selectedMachineKey = MACHINES.length ? getMachineKey(MACHINES[0]) : "";
     connectedDeviceName = "";
+    lastStartedMachineLabel = "";
     machinesInUse = new Set();
     weeklyUsage = {
       limit: Number(data.weeklyLimit || weeklyUsage.limit || 4),
@@ -630,7 +459,7 @@ async function changeActivationSite(site, button) {
       totalLimit: Number(data.totalLimit || 0),
       deleteAfterUse: Boolean(data.deleteAfterUse)
     };
-    setSiteTitle(data.siteName || site.name);
+    setSiteTitle(data.siteName || site.name, data.siteId || site.id);
     updateMachinesInUseNotice();
     updateWeeklyUsageNotice();
     renderDeviceMap();
@@ -773,7 +602,7 @@ function updateUpgradePanel() {
 
   if (wasHidden) setUpgradePanelExpanded(false);
   els.upgradeBtn.classList.remove("hidden");
-  els.upgradeTitle.textContent = "Add 2 extra activations";
+  els.upgradeTitle.textContent = "Add 3 extra activations";
   els.upgradeText.textContent = "Get 2 more machine starts for this week.";
 }
 
@@ -963,6 +792,7 @@ async function prepareUpgradePaymentElements() {
 
 async function beginActivationUpgrade() {
   if (upgradeBusy || !activeAccessCode) return;
+  if (!upgradePreviewMode) window.CircuitWashAnalytics?.track("extra_activation_checkout_started", { source: "weekly_limit" });
   setUpgradeMessage();
   setUpgradePaymentMessage();
   setUpgradePaymentSheetOpen(true);
@@ -1002,6 +832,7 @@ async function completeUpgradePaymentIntent(paymentIntentId, { preview = upgrade
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
+    if (!preview) window.CircuitWashAnalytics?.track("extra_activation_purchase_failed", { source: "weekly_limit" }, { once: `extra-activation-failed-${paymentIntentId}` });
     const error = new Error(data.message || "Payment could not be confirmed.");
     error.code = data.error || "";
     throw error;
@@ -1014,7 +845,8 @@ async function completeUpgradePaymentIntent(paymentIntentId, { preview = upgrade
   }
   await refreshWeeklyUsage();
   updateUpgradePanel();
-  setActivity("Activations added", "2 extra starts are ready", "ok");
+  setActivity("Activations added", "3 extra starts are ready", "ok");
+  window.CircuitWashAnalytics?.track("extra_activation_purchase_completed", { source: "weekly_limit" }, { once: `extra-activation-${paymentIntentId}` });
 }
 
 async function confirmUpgradePayment({ skipSubmit = false } = {}) {
@@ -1023,10 +855,12 @@ async function confirmUpgradePayment({ skipSubmit = false } = {}) {
   els.upgradePaymentSubmitBtn.disabled = true;
   els.upgradePaymentSubmitBtn.textContent = "Processing payment…";
   setUpgradePaymentMessage("Confirming payment…");
+  let paymentIntentId = "client";
   try {
     const submit = await upgradeElements.submit();
     if (submit?.error) throw submit.error;
     const intent = await createUpgradePaymentIntent();
+    paymentIntentId = intent.paymentIntentId || paymentIntentId;
     const returnUrl = upgradePreviewMode
       ? `${location.origin}/activate.html?upgradePreview=1&upgradePayment=return`
       : `${location.origin}/activate.html?upgradePayment=return`;
@@ -1043,6 +877,7 @@ async function confirmUpgradePayment({ skipSubmit = false } = {}) {
       setUpgradePaymentMessage("Payment is still processing. Please wait a moment and try again.", "bad");
     }
   } catch (error) {
+    if (!upgradePreviewMode) window.CircuitWashAnalytics?.track("extra_activation_purchase_failed", { source: "weekly_limit" }, { once: `extra-activation-failed-${paymentIntentId}` });
     setUpgradePaymentMessage(upgradeErrorText(String(error?.code || ""), error?.message), "bad");
   } finally {
     upgradeBusy = false;
@@ -1061,13 +896,15 @@ async function completeActivationUpgrade(sessionId) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
+    window.CircuitWashAnalytics?.track("extra_activation_purchase_failed", { source: "weekly_limit" }, { once: `extra-activation-failed-${sessionId}` });
     const error = new Error(data.message || "Payment could not be confirmed.");
     error.code = data.error || "";
     throw error;
   }
   await refreshWeeklyUsage();
   updateUpgradePanel();
-  setActivity("Activations added", "2 extra starts are ready", "ok");
+  setActivity("Activations added", "3 extra starts are ready", "ok");
+  window.CircuitWashAnalytics?.track("extra_activation_purchase_completed", { source: "weekly_limit" }, { once: `extra-activation-${sessionId}` });
 }
 
 function getSelectedMachine() {
@@ -1324,25 +1161,6 @@ function unlockApp() {
   setActivity("Ready");
 }
 
-function showStoreInvite(invite) {
-  const code = String(invite?.code || "").trim().toUpperCase();
-  if (!/^[A-HJ-NP-Z2-9]{6,16}$/.test(code)) return;
-  els.storeInviteCode.textContent = code;
-  els.openStoreInviteLink.href = `/store.html?code=${encodeURIComponent(code)}`;
-  els.storeInviteOverlay.classList.remove("hidden");
-}
-
-function hideStoreInvite() {
-  els.storeInviteOverlay.classList.add("hidden");
-}
-
-function setStoreAccess(access) {
-  const code = String(access?.code || "").trim().toUpperCase();
-  const available = /^[A-HJ-NP-Z2-9]{6,16}$/.test(code);
-  els.storeNavLink.classList.toggle("hidden", !available);
-  els.storeNavLink.href = available ? `/store.html?code=${encodeURIComponent(code)}` : "/store.html";
-}
-
 async function tryUnlock({ code = "", silent = false } = {}) {
   if (unlocking) return false;
 
@@ -1351,6 +1169,12 @@ async function tryUnlock({ code = "", silent = false } = {}) {
     if (!silent) setPinError("Enter your access code to continue.");
     updateUnlockButtonState();
     return false;
+  }
+  if (!silent) {
+    window.CircuitWashAnalytics?.track("access_code_submitted", {
+      source: "access-code-form",
+      auth_state: "anonymous"
+    });
   }
   unlocking = true;
   setPinError("");
@@ -1377,7 +1201,7 @@ async function tryUnlock({ code = "", silent = false } = {}) {
       try { localStorage.setItem(ACTIVATE_SESSION_KEY, entered); } catch (_) {}
       try { sessionStorage.removeItem(ACTIVATE_LOGGED_OUT_CODE_KEY); } catch (_) {}
       MACHINES = Array.isArray(data?.machines) ? data.machines : [];
-      setSiteTitle(data?.siteName);
+      setSiteTitle(data?.siteName, data?.siteId);
       weeklyUsage = {
         limit: Number(data?.weeklyLimit || 4),
         baseLimit: Number(data?.weeklyBaseLimit || data?.weeklyLimit || 4),
@@ -1403,13 +1227,10 @@ async function tryUnlock({ code = "", silent = false } = {}) {
       setStatus(MACHINES.length ? `ready to connect (${MACHINES[0].name})` : "no machines loaded");
       setActivity("Ready");
       unlockApp();
-      setStoreAccess(data?.storeAccess);
-      if (data?.storeInvite) showStoreInvite(data.storeInvite);
       return true;
     }
 
     activeAccessCode = "";
-    setStoreAccess(null);
     resetUpgradePanel();
 
     if (res.status === 401 || res.status === 404 || res.status === 410) {
@@ -1439,7 +1260,6 @@ async function tryUnlock({ code = "", silent = false } = {}) {
     return false;
   } catch (e) {
     activeAccessCode = "";
-    setStoreAccess(null);
     resetUpgradePanel();
     if (silent) showPinLogin({ focus: false, clearInput: true });
     else els.pinSub.textContent = "Enter your code to access machine controls.";
@@ -1483,7 +1303,7 @@ async function setupFreeActivationLink() {
       const session = await sessionResponse.json().catch(() => ({}));
       if (sessionResponse.ok && !session?.used) {
         els.freeActivationLink.href = `/trial-activate.html#trial=${encodeURIComponent(claim.token)}`;
-        if (els.freeActivationLabel) els.freeActivationLabel.textContent = "Continue free activation";
+        if (els.freeActivationLabel) els.freeActivationLabel.textContent = "New to CircuitWash? Continue your free wash";
         els.freeActivationLink.classList.remove("hidden");
         return;
       }
@@ -1505,8 +1325,6 @@ async function setupFreeActivationLink() {
 }
 
 async function logoutApp() {
-  hideStoreInvite();
-  setStoreAccess(null);
   try { localStorage.removeItem(ACTIVATE_SESSION_KEY); } catch (_) {}
   try {
     if (activeAccessCode) sessionStorage.setItem(ACTIVATE_LOGGED_OUT_CODE_KEY, activeAccessCode);
@@ -1539,7 +1357,6 @@ async function logoutApp() {
 }
 
 function showFeedbackPreview() {
-  setStoreAccess(null);
   activeAccessCode = "feedback-preview";
   setSiteTitle("CircuitWash Demo");
   MACHINES = [
@@ -1585,7 +1402,6 @@ function showFeedbackPreview() {
 }
 
 function showUpgradePreview() {
-  setStoreAccess(null);
   resetUpgradePanel();
   upgradePreviewMode = true;
   activeAccessCode = "upgrade-preview";
@@ -2245,7 +2061,6 @@ els.upgradePaymentCloseBtn.addEventListener("click", closeUpgradePaymentSheet);
 els.upgradeCardToggle.addEventListener("click", toggleUpgradeCardPayment);
 upgradePaymentRoot.querySelectorAll("[data-close-payment-sheet]").forEach((element) => element.addEventListener("click", closeUpgradePaymentSheet));
 els.upgradePaymentForm.addEventListener("submit", (event) => { event.preventDefault(); confirmUpgradePayment(); });
-els.closeStoreInviteBtn.addEventListener("click", () => { tapHaptic(); hideStoreInvite(); });
 els.pinInput.addEventListener("input", () => {
   setPinError("");
   updateUnlockButtonState();
@@ -2258,30 +2073,22 @@ els.pinInput.addEventListener("keydown", (event) => {
 });
 els.changeSiteBtn.addEventListener("click", () => { tapHaptic(); openChangeSite(); });
 els.closeChangeSiteBtn.addEventListener("click", closeChangeSite);
-els.changeSiteOverlay.addEventListener("click", (event) => { if (event.target === els.changeSiteOverlay) closeChangeSite(); });
 els.closeMachinePickerBtn.addEventListener("click", closeMachinePicker);
 els.machinePickerOverlay.addEventListener("click", (event) => {
   if (event.target.matches("[data-close-machine-picker]")) closeMachinePicker();
 });
-els.changeSiteSearch.addEventListener("focus", expandChangeSiteSearch);
-els.changeSiteSearch.addEventListener("blur", () => requestAnimationFrame(updateChangeSiteViewport));
 els.changeSiteSearch.addEventListener("input", () => {
   clearTimeout(changeSiteSearchTimer);
-  changeSiteSearchRequest += 1;
-  const requestId = changeSiteSearchRequest;
   const query = els.changeSiteSearch.value.trim();
-  els.changeSiteOverlay.classList.toggle("has-search-query", Boolean(query));
-  resetChangeSiteResultsScroll();
   if (query.length < 2) {
-    els.changeSiteResults.innerHTML = "";
-    setChangeSiteResultsVisible(false);
+    activationSiteSelector.hide();
   }
-  updateChangeSiteViewport();
-  changeSiteSearchTimer = setTimeout(() => searchChangeSites(requestId), 220);
+  changeSiteSearchTimer = setTimeout(searchChangeSites, 220);
 });
-window.visualViewport?.addEventListener("resize", updateChangeSiteViewport);
-window.visualViewport?.addEventListener("scroll", updateChangeSiteViewport);
-window.addEventListener("resize", updateChangeSiteViewport);
+els.changeSiteSearch.addEventListener("keydown", (event) => activationSiteSelector.handleKeydown(event));
+window.addEventListener("popstate", () => {
+  if (!els.changeSiteOverlay.classList.contains("hidden")) closeChangeSite({ fromPopState: true });
+});
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.machinePickerOverlay.classList.contains("hidden")) {
     closeMachinePicker();
@@ -2303,6 +2110,12 @@ document.querySelectorAll("[data-ios-bluefy-dismiss]").forEach((button) => {
 });
 document.querySelectorAll("[data-bluefy-open]").forEach((link) => {
   link.addEventListener("click", openCurrentActivationInBluefy);
+});
+els.freeActivationLink?.addEventListener("click", () => {
+  window.CircuitWashAnalytics?.track("trial_cta_clicked", {
+    source: "access-code-escape",
+    auth_state: "anonymous"
+  });
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.upgradePaymentSheet.classList.contains("hidden")) closeUpgradePaymentSheet();

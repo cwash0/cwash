@@ -3,6 +3,7 @@ const path = require("path");
 
 let cachedSiteMap = null;
 let cachedPublicSites = null;
+let cachedSiteGeography = null;
 
 function readFirstJson(candidatePaths, expectedType, label) {
   let raw = null;
@@ -72,6 +73,20 @@ function loadAddresses() {
     "array",
     "addresses.json"
   );
+}
+
+function loadSiteGeography() {
+  if (cachedSiteGeography) return cachedSiteGeography;
+  cachedSiteGeography = readFirstJson(
+    [
+      path.join(process.cwd(), "netlify", "data", "site-geography.json"),
+      path.join(__dirname, "..", "data", "site-geography.json"),
+      "/var/task/netlify/data/site-geography.json"
+    ],
+    "object",
+    "site-geography.json"
+  );
+  return cachedSiteGeography;
 }
 
 function normalizeName(value) {
@@ -146,6 +161,26 @@ function getSiteById(siteId) {
   return getPublicSites().find((site) => site.id === id) || null;
 }
 
+function getSiteGeography(siteId) {
+  const id = String(siteId || "").trim();
+  const entry = loadSiteGeography()[id];
+  if (!entry || typeof entry !== "object") return null;
+  return {
+    city: String(entry.city || "").trim(),
+    postcode: String(entry.postcode || "").trim(),
+    region: String(entry.region || "").trim(),
+    country: String(entry.country || "").trim()
+  };
+}
+
+function normalizeCity(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function searchPublicSites(query, mode = "all", limit = 15) {
   const term = normalizeName(query);
   const compactTerm = term.replace(/\s/g, "");
@@ -217,5 +252,7 @@ function levenshtein(left, right) {
 module.exports = {
   getPublicSites,
   getSiteById,
+  getSiteGeography,
+  normalizeCity,
   searchPublicSites
 };

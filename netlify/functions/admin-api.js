@@ -1,16 +1,18 @@
 const crypto = require("crypto");
 const { Pool } = require("pg");
-const { getPublicSites, searchPublicSites } = require("./_site-data");
-const {
-  cleanupStaleStoreOrders,
-  createUniqueStoreCode,
-  ensureStoreSchema,
-  maintainStoreOrders,
-  normalizeStoreEmail
-} = require("./_store-db");
+const { getPublicSites, getSiteGeography, searchPublicSites } = require("./_site-data");
 // Reload this helper with the admin function during local preview hot updates.
 delete require.cache[require.resolve("./_custom-email")];
 const customEmail = require("./_custom-email");
+const { getValidatedAnalyticsSites } = require("./_analytics-validity");
+const { ensureOrderStorage } = require("./_order-storage");
+const { ensureSupportSchema } = require("./_support-schema");
+const {
+  DEFAULT_ATTRIBUTION_DAYS,
+  DEFAULT_MIN_CITY_SAMPLE,
+  calculateGeographicVirality,
+  calculateGeographicViralityTrend
+} = require("./_geographic-virality");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -37,13 +39,8 @@ const PUBLIC_SITE_URL = normalizeBaseUrl(
 const FEEDBACK_INVITE_DAYS = clampInt(process.env.FEEDBACK_INVITE_DAYS, 1, 90, 30);
 const ACCESS_CODE_LENGTH = clampInt(process.env.ACCESS_CODE_LENGTH, 4, 12, 5);
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const STORE_REFERRAL_LIMIT = 5;
-const STORE_ORDER_STALE_HOURS = clampInt(process.env.STORE_ORDER_STALE_HOURS, 1, 168, 24);
 const TRIAL_SETTING_KEY = "homepage_free_trial_enabled";
 const TRIAL_SITE_LIMITS_KEY = "free_trial_site_weekly_limits";
-const STORE_EMAIL_FROM = String(
-  process.env.STORE_EMAIL_FROM || process.env.ACCESS_CODE_EMAIL_FROM || SUPPORT_EMAIL_FROM
-).trim();
 const CUSTOM_EMAIL_FROM = String(
   process.env.CUSTOM_EMAIL_FROM || process.env.SUPPORT_EMAIL_FROM || process.env.ACCESS_CODE_EMAIL_FROM || SUPPORT_EMAIL_FROM
 ).trim();
@@ -81,13 +78,17 @@ exports.handler = async (event) => {
 
     const action = String(body.action || "authenticate").trim();
 
+    await ensureOrderStorage(pool);
+
     if (action === "authenticate") {
       return json({ ok: true, supportEmail: SUPPORT_PUBLIC_EMAIL });
     }
 
+    if (action === "analytics") return json({ ok: true, ...(await getAnalyticsData(body)) });
+    if (action === "analytics_events") return json({ ok: true, ...(await getAnalyticsEvents(body)) });
+
     await ensureSchema();
     if (action === "dashboard") return json({ ok: true, ...(await getDashboard()) });
-    if (action === "analytics") return json({ ok: true, ...(await getAnalyticsData(body)) });
     if (action === "orders") return json({ ok: true, orders: await getOrders(body) });
     if (action === "cleanup_created_orders") return json({ ok: true, ...(await cleanupCreatedOrders(body)) });
     if (action === "customer_notice_data") return json({ ok: true, customers: await getCustomerNoticeCustomers() });
@@ -117,16 +118,6 @@ exports.handler = async (event) => {
     if (action === "support_get") return json({ ok: true, ...(await getSupportTicket(body)) });
     if (action === "support_reply") return json({ ok: true, ...(await replyToSupportTicket(body)) });
     if (action === "support_status") return json({ ok: true, ...(await setSupportStatus(body)) });
-    if (action === "support_delete") return json({ ok: true, ...(await deleteSupportTicket(body)) });
-    if (action === "store_data") return json({ ok: true, ...(await getStoreData()) });
-    if (action === "store_create_member") return json({ ok: true, ...(await createStoreMember(body)) }, 201);
-    if (action === "store_set_member_active") return json({ ok: true, ...(await setStoreMemberActive(body)) });
-    if (action === "store_set_member_invite_limit") return json({ ok: true, ...(await setStoreMemberInviteLimit(body)) });
-    if (action === "store_create_product") return json({ ok: true, ...(await createStoreProduct(body)) }, 201);
-    if (action === "store_update_product") return json({ ok: true, ...(await updateStoreProduct(body)) });
-    if (action === "store_delete_product") return json({ ok: true, ...(await deleteStoreProduct(body)) });
-    if (action === "store_set_order_fulfilment") return json({ ok: true, ...(await setStoreOrderFulfilment(body)) });
-    if (action === "store_cleanup_stale_orders") return json({ ok: true, ...(await cleanupStoreStaleOrders(body)) });
     if (action === "email_data") return json({ ok: true, ...(await customEmail.getEmailData(pool)) });
     if (action === "email_add_contacts") return json({ ok: true, ...(await customEmail.addContacts(pool, body)) });
     if (action === "email_remove_contact") return json({ ok: true, ...(await customEmail.removeContact(pool, body)) });
@@ -163,7 +154,7 @@ class AdminError extends Error {
 async function ensureSchema() {
   if (schemaReady) return;
 
-  await ensureStoreSchema(pool);
+  await ensureSupportSchema(pool);
   await customEmail.ensureCustomEmailSchema(pool);
 
   await pool.query(`
@@ -374,20 +365,32 @@ async function ensureSchema() {
     where expires_at is null and source = 'payment'
   `);
 
-  const ordersExist = await tableExists("paypal_access_orders");
+  const ordersExist = await tableExists("access_orders");
   if (ordersExist) {
     await pool.query(`
-      alter table paypal_access_orders
+      alter table access_orders
         add column if not exists payment_method text,
+        add column if not exists order_type text not null default 'access_code',
+        add column if not exists quantity integer not null default 1,
+        add column if not exists entitlement_access_code text,
+        add column if not exists entitlement_week_start date,
+        add column if not exists entitlement_week_end date,
+        add column if not exists provider_reference text,
         add column if not exists subtotal_amount numeric(10, 2),
         add column if not exists discount_amount numeric(10, 2) not null default 0,
         add column if not exists promo_code text
     `);
     await pool.query(`
-      update paypal_access_orders
+      update access_orders
       set subtotal_amount = amount
       where subtotal_amount is null
     `);
+    await pool.query(`create index if not exists access_orders_created_idx on access_orders(created_at desc)`);
+    await pool.query(`create index if not exists access_orders_completed_idx on access_orders(completed_at desc) where status = 'COMPLETED'`);
+    await pool.query(`alter table access_orders drop constraint if exists access_orders_provider_reference_key`);
+    await pool.query(`drop index if exists access_orders_provider_reference_idx`);
+    await pool.query(`create unique index if not exists access_orders_provider_reference_provider_idx on access_orders(payment_method, provider_reference) where provider_reference is not null`);
+    await pool.query(`create index if not exists access_orders_type_completed_idx on access_orders(order_type, completed_at desc) where status = 'COMPLETED'`);
   }
 
   await pool.query(`
@@ -404,6 +407,12 @@ async function ensureSchema() {
       user_agent text,
       is_bot boolean not null default false,
       bot_reason text,
+      is_test boolean not null default false,
+      environment text not null default 'production',
+      valid boolean not null default true,
+      validation_reason text not null default '',
+      source text not null default 'public_site',
+      record_type text not null default 'site_selection',
       order_id text,
       converted_at timestamptz,
       created_at timestamptz not null default now()
@@ -422,6 +431,12 @@ async function ensureSchema() {
       add column if not exists user_agent text,
       add column if not exists is_bot boolean not null default false,
       add column if not exists bot_reason text,
+      add column if not exists is_test boolean not null default false,
+      add column if not exists environment text not null default 'production',
+      add column if not exists valid boolean not null default true,
+      add column if not exists validation_reason text not null default '',
+      add column if not exists source text not null default 'public_site',
+      add column if not exists record_type text not null default 'site_selection',
       add column if not exists order_id text,
       add column if not exists converted_at timestamptz,
       add column if not exists created_at timestamptz not null default now()
@@ -432,6 +447,28 @@ async function ensureSchema() {
   await pool.query(`create index if not exists site_interest_hits_site_session_idx on site_interest_hits(site_id, session_hash) where session_hash is not null`);
   await pool.query(`create index if not exists site_interest_hits_session_created_idx on site_interest_hits(session_hash, created_at desc) where session_hash is not null`);
   await pool.query(`create index if not exists site_interest_hits_human_created_idx on site_interest_hits(created_at desc) where is_bot = false`);
+  await pool.query(`
+    create index if not exists site_interest_hits_analytics_period_idx
+    on site_interest_hits(created_at desc)
+    where is_bot = false and is_test = false and valid = true
+      and environment = 'production' and source = 'public_site' and record_type = 'site_selection'
+  `);
+  await pool.query(`
+    create index if not exists site_interest_hits_analytics_site_period_idx
+    on site_interest_hits(site_id, created_at desc)
+    where is_bot = false and is_test = false and valid = true
+      and environment = 'production' and source = 'public_site' and record_type = 'site_selection'
+  `);
+  await pool.query(`
+    create index if not exists site_interest_hits_analytics_recent_idx
+    on site_interest_hits(id desc)
+    where is_bot = false and is_test = false and valid = true
+      and environment = 'production' and source = 'public_site' and record_type = 'site_selection'
+  `);
+  await pool.query(`create index if not exists site_interest_hits_bot_created_idx on site_interest_hits(created_at desc) where is_bot = true`);
+  if (await tableExists("code_usage_weekly")) {
+    await pool.query(`create index if not exists code_usage_weekly_week_idx on code_usage_weekly(week_start desc)`);
+  }
 
   schemaReady = true;
 }
@@ -500,7 +537,7 @@ function loginAttemptFingerprint(scope, value) {
 }
 
 async function getDashboard() {
-  const ordersExist = await tableExists("paypal_access_orders");
+  const ordersExist = await tableExists("access_orders");
   const usageExists = await tableExists("code_usage_weekly");
 
   let summary = {
@@ -522,6 +559,7 @@ async function getDashboard() {
   };
   let daily = [];
   let methods = [];
+  let orderTypes = [];
   let sites = [];
   let recentOrders = [];
 
@@ -542,7 +580,7 @@ async function getDashboard() {
         count(*) filter (where status = 'CREATED' and created_at < now() - interval '24 hours')::int as stale_created_orders,
         count(*) filter (where status = 'COMPLETED' and email_status = 'FAILED' and completed_at >= now() - interval '7 days')::int as recent_email_failures,
         coalesce(max(currency) filter (where status = 'COMPLETED'), 'GBP') as currency
-      from paypal_access_orders
+      from access_orders
     `);
     const row = result.rows[0] || {};
     summary = {
@@ -572,7 +610,7 @@ async function getDashboard() {
         count(o.order_id)::int as orders,
         coalesce(sum(o.amount), 0) as revenue
       from dates
-      left join paypal_access_orders o
+      left join access_orders o
         on o.status = 'COMPLETED'
        and (o.completed_at at time zone 'UTC')::date = dates.day
       group by dates.day
@@ -585,10 +623,10 @@ async function getDashboard() {
     }));
 
     const methodsResult = await pool.query(`
-      select coalesce(nullif(payment_method, ''), 'paypal') as method,
+      select coalesce(nullif(payment_method, ''), 'unknown') as method,
              count(*)::int as orders,
              coalesce(sum(amount), 0) as revenue
-      from paypal_access_orders
+      from access_orders
       where status = 'COMPLETED'
       group by 1
       order by orders desc
@@ -599,9 +637,24 @@ async function getDashboard() {
       revenue: number(entry.revenue)
     }));
 
+    const orderTypesResult = await pool.query(`
+      select coalesce(nullif(order_type, ''), 'access_code') as order_type,
+             count(*)::int as orders,
+             coalesce(sum(amount), 0) as revenue
+      from access_orders
+      where status = 'COMPLETED'
+      group by 1
+      order by revenue desc, orders desc
+    `);
+    orderTypes = orderTypesResult.rows.map((entry) => ({
+      orderType: entry.order_type,
+      orders: number(entry.orders),
+      revenue: number(entry.revenue)
+    }));
+
     const sitesResult = await pool.query(`
       select site_id, count(*)::int as orders, coalesce(sum(amount), 0) as revenue
-      from paypal_access_orders
+      from access_orders
       where status = 'COMPLETED'
       group by site_id
       order by revenue desc, orders desc
@@ -625,22 +678,15 @@ async function getDashboard() {
 
   const supportResult = await pool.query(`
     select
-      count(*) filter (where status <> 'CLOSED')::int as open,
+      count(*) filter (where status <> 'RESOLVED')::int as open,
       count(*) filter (where is_read = false)::int as unread
     from support_tickets
   `);
-  const storeOperationsResult = await pool.query(`
-    select
-      count(*) filter (where status = 'COMPLETED' and fulfilment_status = 'PENDING')::int as pending_fulfilment,
-      count(*) filter (where status = 'COMPLETED' and fulfilment_status = 'PROCESSING')::int as processing_fulfilment
-    from store_orders
-  `);
-  const storeOperations = storeOperationsResult.rows[0] || {};
-
   return {
     summary,
     daily,
     methods,
+    orderTypes,
     sites,
     recentOrders,
     support: {
@@ -650,167 +696,217 @@ async function getDashboard() {
     operations: {
       createdOrders: number(summary.createdOrders),
       staleCreatedOrders: number(summary.staleCreatedOrders),
-      recentEmailFailures: number(summary.recentEmailFailures),
-      pendingFulfilment: number(storeOperations.pending_fulfilment),
-      processingFulfilment: number(storeOperations.processing_fulfilment)
+      recentEmailFailures: number(summary.recentEmailFailures)
     }
   };
 }
 
-async function getAnalyticsData(body = {}) {
-  const limit = clampInt(body.limit, 1, 300, 100);
-  const siteMap = new Map(getPublicSites().map((site) => [site.id, site]));
-  const ordersExist = await tableExists("paypal_access_orders");
+function analyticsPeriodDays(value) {
+  const days = Number.parseInt(String(value || "30"), 10);
+  return [7, 30, 90].includes(days) ? days : 30;
+}
 
-  const summaryResult = await pool.query(`
-    select
-      count(*) filter (where is_bot = false)::int as total_hits,
-      count(*) filter (where is_bot = false and created_at >= date_trunc('day', now()))::int as today_hits,
-      count(*) filter (where is_bot = false and created_at >= now() - interval '7 days')::int as seven_day_hits,
-      count(*) filter (where is_bot = false and created_at >= now() - interval '30 days')::int as thirty_day_hits,
-      count(*) filter (where is_bot = false and order_id is null and created_at >= now() - interval '30 days')::int as no_order_hits,
-      count(distinct visitor_hash) filter (
-        where is_bot = false
-          and visitor_hash is not null
-          and created_at >= now() - interval '30 days'
-      )::int as unique_visitors,
-      count(*) filter (where is_bot = true and created_at >= now() - interval '30 days')::int as bot_hits
-    from site_interest_hits
-  `);
+function analyticsContext() {
+  const publicSites = getPublicSites();
+  const validatedSites = getValidatedAnalyticsSites(publicSites);
+  return {
+    publicSites,
+    siteMap: new Map(publicSites.map((site) => [site.id, site])),
+    validatedSites,
+    validSiteIds: [...validatedSites.valid.keys()]
+  };
+}
+
+const ANALYTICS_VALID_HIT_WHERE = `
+  is_bot = false
+  and is_test = false
+  and valid = true
+  and environment = 'production'
+  and source = 'public_site'
+  and record_type = 'site_selection'
+  and site_id = any($1::text[])
+`;
+
+async function getAnalyticsData(body = {}) {
+  const periodDays = analyticsPeriodDays(body.periodDays);
+  const limit = clampInt(body.limit, 10, 50, 25);
+  const context = analyticsContext();
+  const { siteMap, validatedSites, validSiteIds } = context;
+  const [ordersExist, usageExists] = await Promise.all([
+    tableExists("access_orders"),
+    tableExists("code_usage_weekly")
+  ]);
+  const periodParams = [validSiteIds, periodDays];
+
+  const queryTasks = [
+    pool.query(`
+      select
+        count(*)::int as period_hits,
+        count(*) filter (where created_at >= date_trunc('day', now()))::int as today_hits,
+        count(*) filter (where created_at >= now() - interval '7 days')::int as seven_day_hits,
+        count(*) filter (where order_id is null)::int as no_order_hits,
+        count(distinct visitor_hash) filter (where visitor_hash is not null)::int as unique_visitors
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at >= now() - ($2::int * interval '1 day')
+    `, periodParams),
+    pool.query(`
+      select
+        count(*) filter (where is_bot = true)::int as bot_hits,
+        count(*) filter (
+          where is_bot = false and not (
+            is_test = false
+            and valid = true
+            and environment = 'production'
+            and source = 'public_site'
+            and record_type = 'site_selection'
+            and site_id = any($1::text[])
+          )
+        )::int as excluded_hits
+      from site_interest_hits
+      where created_at >= now() - ($2::int * interval '1 day')
+    `, periodParams),
+    pool.query(`
+      select site_id, count(*)::int as hits
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at >= now() - ($2::int * interval '1 day')
+      group by site_id
+      order by hits desc, site_id
+      limit 12
+    `, periodParams),
+    pool.query(`
+      select coalesce(nullif(search_mode, ''), 'name') as mode, count(*)::int as hits
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at >= now() - ($2::int * interval '1 day')
+      group by 1
+      order by hits desc
+      limit 8
+    `, periodParams),
+    pool.query(`
+      select coalesce(nullif(referrer, ''), 'Direct') as referrer, count(*)::int as hits
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at >= now() - ($2::int * interval '1 day')
+      group by 1
+      order by hits desc
+      limit 8
+    `, periodParams),
+    pool.query(`
+      select lower(trim(search_query)) as query, count(*)::int as searches
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at >= now() - ($2::int * interval '1 day')
+        and nullif(trim(search_query), '') is not null
+      group by 1
+      order by searches desc, query
+      limit 10
+    `, periodParams),
+    pool.query(`
+      with date_range as (
+        select generate_series(
+          current_date - ($2::int - 1),
+          current_date,
+          interval '1 day'
+        )::date as day
+      ), activity as (
+        select
+          created_at::date as day,
+          count(*)::int as hits,
+          count(distinct visitor_hash) filter (where visitor_hash is not null)::int as unique_visitors
+        from site_interest_hits
+        where ${ANALYTICS_VALID_HIT_WHERE}
+          and created_at >= current_date - ($2::int - 1)
+        group by 1
+      )
+      select to_char(date_range.day, 'YYYY-MM-DD') as date,
+             coalesce(activity.hits, 0)::int as hits,
+             coalesce(activity.unique_visitors, 0)::int as unique_visitors
+      from date_range
+      left join activity using (day)
+      order by date_range.day
+    `, periodParams),
+    pool.query(`
+      select
+        count(*) filter (where created_at >= now() - interval '30 days')::int as rejected_30_days,
+        count(*) filter (where created_at >= date_trunc('day', now()))::int as rejected_today
+      from admin_login_attempts
+    `),
+    pool.query(`
+      select id, action, attempted_code_preview, attempted_code_hash, attempted_code_length, ip_hash, user_agent, created_at
+      from admin_login_attempts
+      order by id desc
+      limit 25
+    `),
+    getAnalyticsEvents({ periodDays, limit }, context),
+    getGeographicVirality(periodDays, context)
+  ];
+
+  if (ordersExist) {
+    queryTasks.push(pool.query(`
+      select
+        count(*) filter (where created_at >= now() - ($1::int * interval '1 day'))::int as created_orders,
+        count(*) filter (where status = 'COMPLETED' and completed_at >= now() - ($1::int * interval '1 day'))::int as completed_orders
+      from access_orders
+    `, [periodDays]));
+  } else queryTasks.push(Promise.resolve({ rows: [{}] }));
+
+  if (usageExists) {
+    queryTasks.push(pool.query(`
+      with weeks as (
+        select generate_series(
+          date_trunc('week', current_date) - interval '11 weeks',
+          date_trunc('week', current_date),
+          interval '1 week'
+        )::date as week
+      ), activity as (
+        select week_start::date as week,
+               coalesce(sum(login_count), 0)::int as activations,
+               count(distinct code)::int as active_codes
+        from code_usage_weekly
+        where week_start >= date_trunc('week', current_date) - interval '11 weeks'
+        group by 1
+      )
+      select to_char(weeks.week, 'YYYY-MM-DD') as week,
+             coalesce(activity.activations, 0)::int as activations,
+             coalesce(activity.active_codes, 0)::int as active_codes
+      from weeks
+      left join activity using (week)
+      order by weeks.week
+    `));
+  } else queryTasks.push(Promise.resolve({ rows: [] }));
+
+  const [summaryResult, qualityResult, topSitesResult, modesResult, referrersResult, topSearchesResult, dailyResult, adminSummaryResult, adminRowsResult, events, geographicVirality, orderSummaryResult, weeklyResult] = await Promise.all(queryTasks);
   const summaryRow = summaryResult.rows[0] || {};
-  const adminLoginSummaryResult = await pool.query(`
-    select
-      count(*) filter (where created_at >= now() - interval '30 days')::int as rejected_30_days,
-      count(*) filter (where created_at >= date_trunc('day', now()))::int as rejected_today
-    from admin_login_attempts
-  `);
-  const adminLoginRows = await pool.query(`
-    select id, action, attempted_code_preview, attempted_code_hash, attempted_code_length, ip_hash, user_agent, created_at
-    from admin_login_attempts
-    order by created_at desc
-    limit 100
-  `);
-  const adminLoginSummary = adminLoginSummaryResult.rows[0] || {};
+  const qualityRow = qualityResult.rows[0] || {};
+  const orderRow = orderSummaryResult.rows[0] || {};
+  const adminRow = adminSummaryResult.rows[0] || {};
   const summary = {
-    totalHits: number(summaryRow.total_hits),
+    periodHits: number(summaryRow.period_hits),
     todayHits: number(summaryRow.today_hits),
     sevenDayHits: number(summaryRow.seven_day_hits),
-    thirtyDayHits: number(summaryRow.thirty_day_hits),
     noOrderHits: number(summaryRow.no_order_hits),
     uniqueVisitors: number(summaryRow.unique_visitors),
-    botHits: number(summaryRow.bot_hits),
-    rejectedAdminLogins: number(adminLoginSummary.rejected_30_days),
-    rejectedAdminLoginsToday: number(adminLoginSummary.rejected_today),
-    createdOrders: 0,
-    completedOrders: 0,
-    noOrderEstimate: 0
+    botHits: number(qualityRow.bot_hits),
+    excludedHits: number(qualityRow.excluded_hits),
+    invalidSites: validatedSites.invalidSites.length,
+    rejectedAdminLogins: number(adminRow.rejected_30_days),
+    rejectedAdminLoginsToday: number(adminRow.rejected_today),
+    createdOrders: number(orderRow.created_orders),
+    completedOrders: number(orderRow.completed_orders)
   };
-  summary.noOrderEstimate = summary.noOrderHits;
-
-  let ordersBySite = new Map();
-  if (ordersExist) {
-    const orderSummary = await pool.query(`
-      select
-        count(*) filter (where created_at >= now() - interval '30 days')::int as created_orders,
-        count(*) filter (where status = 'COMPLETED' and completed_at >= now() - interval '30 days')::int as completed_orders
-      from paypal_access_orders
-    `);
-    summary.createdOrders = number(orderSummary.rows[0]?.created_orders);
-    summary.completedOrders = number(orderSummary.rows[0]?.completed_orders);
-    summary.noOrderEstimate = summary.noOrderHits;
-
-    const ordersBySiteResult = await pool.query(`
-      select
-        site_id,
-        count(*) filter (where created_at >= now() - interval '30 days')::int as created_orders,
-        count(*) filter (where status = 'COMPLETED' and completed_at >= now() - interval '30 days')::int as completed_orders
-      from paypal_access_orders
-      group by site_id
-    `);
-    ordersBySite = new Map(ordersBySiteResult.rows.map((row) => [row.site_id, {
-      createdOrders: number(row.created_orders),
-      completedOrders: number(row.completed_orders)
-    }]));
-  }
-
-  const topSitesResult = await pool.query(`
-    select
-      site_id,
-      count(*)::int as hits,
-      count(*) filter (where order_id is null)::int as no_order_hits,
-      count(distinct visitor_hash) filter (where visitor_hash is not null)::int as unique_visitors,
-      max(created_at) as last_hit_at
-    from site_interest_hits
-    where is_bot = false
-      and created_at >= now() - interval '30 days'
-    group by site_id
-    order by hits desc, last_hit_at desc
-    limit 12
-  `);
-  const topSites = topSitesResult.rows.map((row) => {
-    const orders = ordersBySite.get(row.site_id) || {};
-    return {
-      siteId: row.site_id,
-      siteName: siteMap.get(row.site_id)?.name || row.site_id,
-      hits: number(row.hits),
-      noOrderHits: number(row.no_order_hits),
-      uniqueVisitors: number(row.unique_visitors),
-      createdOrders: number(orders.createdOrders),
-      completedOrders: number(orders.completedOrders),
-      noOrderEstimate: number(row.no_order_hits),
-      lastHitAt: row.last_hit_at || null
-    };
-  });
-
-  const modesResult = await pool.query(`
-    select coalesce(nullif(search_mode, ''), 'name') as mode, count(*)::int as hits
-    from site_interest_hits
-    where is_bot = false
-      and created_at >= now() - interval '30 days'
-    group by 1
-    order by hits desc
-  `);
-  const modes = modesResult.rows.map((row) => ({
-    mode: row.mode,
-    hits: number(row.hits)
-  }));
-
-  const referrerResult = await pool.query(`
-    select coalesce(nullif(referrer, ''), 'Direct') as referrer, count(*)::int as hits
-    from site_interest_hits
-    where is_bot = false
-      and created_at >= now() - interval '30 days'
-    group by 1
-    order by hits desc
-    limit 8
-  `);
-  const referrers = referrerResult.rows.map((row) => ({
-    referrer: shortReferrer(row.referrer),
-    hits: number(row.hits)
-  }));
-
-  const recentResult = await pool.query(
-    `
-      select id, site_id, search_mode, search_query, page_path, referrer, created_at
-      from site_interest_hits
-      where is_bot = false
-      order by created_at desc
-      limit $1
-    `,
-    [limit]
-  );
-  const recentHits = recentResult.rows.map((row) => ({
-    id: number(row.id),
+  const topSites = topSitesResult.rows.map((row) => ({
     siteId: row.site_id,
     siteName: siteMap.get(row.site_id)?.name || row.site_id,
-    searchMode: row.search_mode || "",
-    searchQuery: row.search_query || "",
-    pagePath: row.page_path || "",
-    referrer: shortReferrer(row.referrer || ""),
-    createdAt: row.created_at
+    hits: number(row.hits)
   }));
-
-  const adminLoginAttempts = adminLoginRows.rows.map((row) => ({
+  const modes = modesResult.rows.map((row) => ({ mode: row.mode, hits: number(row.hits) }));
+  const referrers = referrersResult.rows.map((row) => ({ referrer: shortReferrer(row.referrer), hits: number(row.hits) }));
+  const topSearches = topSearchesResult.rows.map((row) => ({ query: String(row.query || "").slice(0, 120), searches: number(row.searches) }));
+  const daily = dailyResult.rows.map((row) => ({ date: row.date, hits: number(row.hits), uniqueVisitors: number(row.unique_visitors) }));
+  const weeklyActivations = weeklyResult.rows.map((row) => ({ week: row.week, activations: number(row.activations), activeCodes: number(row.active_codes) }));
+  const adminLoginAttempts = adminRowsResult.rows.map((row) => ({
     id: number(row.id),
     action: row.action || "authenticate",
     attemptedCodePreview: row.attempted_code_preview || "",
@@ -821,11 +917,170 @@ async function getAnalyticsData(body = {}) {
     createdAt: row.created_at
   }));
 
-  return { summary, topSites, modes, referrers, recentHits, adminLoginAttempts };
+  return {
+    meta: { periodDays, generatedAt: new Date().toISOString(), payloadModel: "aggregated" },
+    summary,
+    daily,
+    weeklyActivations,
+    topSites,
+    topSearches,
+    modes,
+    referrers,
+    geographicVirality,
+    recentHits: events.recentHits,
+    recentHitsPage: events.recentHitsPage,
+    adminLoginAttempts
+  };
+}
+
+async function getGeographicVirality(periodDays, context) {
+  const empty = {
+    available: false,
+    reason: "Referral attribution data is not available.",
+    attributionDays: DEFAULT_ATTRIBUTION_DAYS,
+    minCitySample: DEFAULT_MIN_CITY_SAMPLE,
+    eligibleSourceAccommodations: 0,
+    knownLocationSources: 0,
+    locationCoverage: 0,
+    qualifyingCityCount: 0,
+    withinCityVirality: 0,
+    withinCityOverall: 0,
+    crossCityVirality: 0,
+    withinCityPairs: 0,
+    crossCityPairs: 0,
+    sameSitePairsExcluded: 0,
+    unknownLocationPairs: 0,
+    cities: [],
+    topRoutes: [],
+    trend: []
+  };
+
+  const [referralsExist, usageExists, accessCodesExist] = await Promise.all([
+    tableExists("referral_rewards"),
+    tableExists("code_usage_weekly"),
+    tableExists("access_codes")
+  ]);
+  if (!referralsExist || !usageExists || !accessCodesExist) return empty;
+  if (!(await columnExists("referral_rewards", "referrer_code"))) return empty;
+
+  const hasReferredCode = await columnExists("referral_rewards", "referred_access_code");
+  const hasReferredOrder = await columnExists("referral_rewards", "referred_order_id");
+  const ordersExist = await tableExists("access_orders");
+  if (!hasReferredCode && !(hasReferredOrder && ordersExist)) return empty;
+
+  const eligibleResult = await pool.query(
+    `
+      with first_activation as (
+        select ac.site_id,
+               min(coalesce(u.first_used_at, u.week_start::timestamptz)) as activated_at
+        from code_usage_weekly u
+        join access_codes ac on ac.code = u.code
+        where ac.site_id = any($1::text[])
+          and u.login_count > 0
+        group by ac.site_id
+      )
+      select site_id, activated_at
+      from first_activation
+      where activated_at >= now() - ($2::int * interval '1 day')
+        and activated_at <= now()
+    `,
+    [context.validSiteIds, periodDays]
+  );
+
+  const targetCodeExpression = hasReferredCode && hasReferredOrder && ordersExist
+    ? "coalesce(rr.referred_access_code, referred_order.access_code)"
+    : hasReferredCode
+      ? "rr.referred_access_code"
+      : "referred_order.access_code";
+  const orderJoin = hasReferredOrder && ordersExist
+    ? "left join access_orders referred_order on referred_order.order_id = rr.referred_order_id"
+    : "";
+
+  const propagationResult = await pool.query(
+    `
+      select source_code.site_id as source_site_id,
+             target_code.site_id as target_site_id,
+             min(coalesce(target_usage.first_used_at, target_usage.week_start::timestamptz)) as converted_at
+      from referral_rewards rr
+      join access_codes source_code on source_code.code = rr.referrer_code
+      ${orderJoin}
+      join access_codes target_code on target_code.code = ${targetCodeExpression}
+      join code_usage_weekly target_usage
+        on target_usage.code = target_code.code
+       and target_usage.login_count > 0
+      where source_code.site_id = any($1::text[])
+        and target_code.site_id = any($1::text[])
+      group by source_code.site_id, target_code.site_id
+    `,
+    [context.validSiteIds]
+  );
+
+  const cityBySite = Object.fromEntries(context.validSiteIds.map((siteId) => [siteId, getSiteGeography(siteId)?.city || ""]));
+  const periodEnd = new Date();
+  const periodStart = new Date(periodEnd.getTime() - periodDays * 86400000);
+  const options = {
+    eligibleSources: eligibleResult.rows.map((row) => ({ siteId: row.site_id, activatedAt: row.activated_at })),
+    propagations: propagationResult.rows.map((row) => ({
+      sourceSiteId: row.source_site_id,
+      targetSiteId: row.target_site_id,
+      convertedAt: row.converted_at
+    })),
+    cityBySite,
+    periodStart,
+    periodEnd,
+    attributionDays: DEFAULT_ATTRIBUTION_DAYS,
+    minCitySample: DEFAULT_MIN_CITY_SAMPLE
+  };
+  const result = calculateGeographicVirality(options);
+  return {
+    available: true,
+    definition: "Successful first activation attributed through the existing referral relationship.",
+    ...result,
+    trend: calculateGeographicViralityTrend(options, periodDays <= 7 ? 7 : 8)
+  };
+}
+
+async function getAnalyticsEvents(body = {}, suppliedContext = null) {
+  const periodDays = analyticsPeriodDays(body.periodDays);
+  const limit = clampInt(body.limit, 10, 50, 25);
+  const cursor = Number.parseInt(String(body.cursor || ""), 10);
+  const context = suppliedContext || analyticsContext();
+  const params = [context.validSiteIds, periodDays, limit + 1];
+  const cursorClause = Number.isSafeInteger(cursor) && cursor > 0 ? `and id < $4` : "";
+  if (cursorClause) params.push(cursor);
+  const result = await pool.query(`
+    select id, site_id, search_mode, search_query, page_path, referrer, created_at
+    from site_interest_hits
+    where ${ANALYTICS_VALID_HIT_WHERE}
+      and created_at >= now() - ($2::int * interval '1 day')
+      ${cursorClause}
+    order by id desc
+    limit $3
+  `, params);
+  const hasMore = result.rows.length > limit;
+  const rows = result.rows.slice(0, limit);
+  const recentHits = rows.map((row) => ({
+    id: number(row.id),
+    siteId: row.site_id,
+    siteName: context.siteMap.get(row.site_id)?.name || row.site_id,
+    searchMode: row.search_mode || "",
+    searchQuery: row.search_query || "",
+    pagePath: row.page_path || "",
+    referrer: shortReferrer(row.referrer || ""),
+    createdAt: row.created_at
+  }));
+  return {
+    recentHits,
+    recentHitsPage: {
+      returned: recentHits.length,
+      hasMore,
+      nextCursor: hasMore && rows.length ? String(rows[rows.length - 1].id) : null
+    }
+  };
 }
 
 async function getOrders(body = {}) {
-  if (!(await tableExists("paypal_access_orders"))) return [];
+  if (!(await tableExists("access_orders"))) return [];
   const limit = clampInt(body.limit, 1, 200, 50);
   const status = String(body.status || "COMPLETED").trim().toUpperCase();
   const params = [];
@@ -837,11 +1092,13 @@ async function getOrders(body = {}) {
   params.push(limit);
   const { rows } = await pool.query(
     `
-      select order_id, site_id, amount, currency, status, access_code,
+      select order_id, site_id, amount, currency, status,
+             coalesce(access_code, entitlement_access_code) as linked_access_code,
              customer_email, email_status, payment_method,
+             order_type, quantity, entitlement_week_start, entitlement_week_end, provider_reference,
              subtotal_amount, discount_amount, promo_code,
              created_at, completed_at
-      from paypal_access_orders
+      from access_orders
       ${conditions.length ? `where ${conditions.join(" and ")}` : ""}
       order by coalesce(completed_at, created_at) desc
       limit $${params.length}
@@ -859,29 +1116,30 @@ async function getOrders(body = {}) {
     promoCode: row.promo_code || "",
     currency: row.currency,
     status: row.status,
-    code: row.access_code || "",
+    code: row.linked_access_code || "",
     email: row.customer_email || "",
     emailStatus: row.email_status || "",
-    paymentMethod: row.payment_method || "paypal",
+    paymentMethod: row.payment_method || "unknown",
+    orderType: row.order_type || "access_code",
+    quantity: Math.max(1, number(row.quantity) || 1),
+    entitlementWeekStart: row.entitlement_week_start || null,
+    entitlementWeekEnd: row.entitlement_week_end || null,
+    providerReference: row.provider_reference || "",
     createdAt: row.created_at,
     completedAt: row.completed_at
   }));
 }
 
 async function cleanupCreatedOrders(body = {}) {
-  if (body.scope === "store") {
-    const olderThanHours = clampInt(body.olderThanHours, 1, 168, STORE_ORDER_STALE_HOURS);
-    return cleanupStaleStoreOrders(pool, { staleHours: olderThanHours });
-  }
-  if (!(await tableExists("paypal_access_orders"))) return { deleted: 0 };
+  if (!(await tableExists("access_orders"))) return { deleted: 0 };
   const olderThanHours = clampInt(body.olderThanHours, 1, 720, 24);
   const limit = clampInt(body.limit, 1, 5000, 1000);
   const result = await pool.query(
     `
-      delete from paypal_access_orders
+      delete from access_orders
       where order_id in (
         select order_id
-        from paypal_access_orders
+        from access_orders
         where status = 'CREATED'
           and access_code is null
           and capture_id is null
@@ -898,7 +1156,7 @@ async function cleanupCreatedOrders(body = {}) {
 }
 
 async function getCustomerNoticeCustomers() {
-  if (!(await tableExists("paypal_access_orders"))) return [];
+  if (!(await tableExists("access_orders"))) return [];
   const { rows } = await pool.query(`
     with ranked as (
       select
@@ -913,7 +1171,7 @@ async function getCustomerNoticeCustomers() {
           partition by lower(trim(customer_email))
           order by coalesce(completed_at, created_at) desc, order_id desc
         ) as row_number
-      from paypal_access_orders
+      from access_orders
       where status = 'COMPLETED'
         and customer_email is not null
         and trim(customer_email) <> ''
@@ -957,7 +1215,7 @@ async function sendCustomerWebsiteNotices(body = {}) {
   if (invalid.length) throw new AdminError(`Invalid email address: ${invalid[0]}`, 400, "invalid_email");
 
   const customerByEmail = new Map();
-  if (await tableExists("paypal_access_orders")) {
+  if (await tableExists("access_orders")) {
     const keys = uniqueEmails.map((email) => email.toLowerCase());
     const result = await pool.query(
       `
@@ -966,7 +1224,7 @@ async function sendCustomerWebsiteNotices(body = {}) {
                trim(customer_email) as customer_email,
                site_id,
                order_id
-        from paypal_access_orders
+        from access_orders
         where status = 'COMPLETED'
           and lower(trim(customer_email)) = any($1::text[])
         order by lower(trim(customer_email)), coalesce(completed_at, created_at) desc, order_id desc
@@ -1020,7 +1278,7 @@ async function sendOneCustomerWebsiteNotice(email, customer = {}) {
         <p style="margin:0 0 12px;color:#475569">Please use <strong>circuitwash.com</strong> for laundry access${escapeHtml(siteLine)}.</p>
         <p style="margin:0 0 22px;color:#475569">You can buy access codes, activate machines, and contact support from the new website. Any existing access code you have will continue to work.</p>
         <a href="${escapeHtml(websiteUrl)}" style="display:inline-block;padding:13px 20px;border-radius:11px;background:#0891b2;color:#ffffff;text-decoration:none;font-weight:700">Open circuitwash.com</a>
-        <p style="margin:24px 0 0;font-size:12px;color:#64748b">Need support? Reply to this email or contact <a href="mailto:${escapeHtml(SUPPORT_PUBLIC_EMAIL)}">${escapeHtml(SUPPORT_PUBLIC_EMAIL)}</a>.</p>
+        <p style="margin:24px 0 0;font-size:12px;color:#64748b">Need support? Reply to this email or <a href="${escapeHtml(PUBLIC_SITE_URL)}/support.html?source=%2Femail">contact support online</a>.</p>
       </div>
     </div>`;
 
@@ -1214,7 +1472,7 @@ async function listPromoCodes(body = {}) {
   }
   params.push(limit);
 
-  const ordersExist = await tableExists("paypal_access_orders");
+  const ordersExist = await tableExists("access_orders");
   const orderJoin = ordersExist
     ? `
       left join (
@@ -1229,7 +1487,7 @@ async function listPromoCodes(body = {}) {
           coalesce(sum(discount_amount) filter (where status = 'COMPLETED'), 0) as discount_total,
           coalesce(sum(amount) filter (where status = 'COMPLETED'), 0) as net_revenue,
           max(completed_at) filter (where status = 'COMPLETED') as last_used_at
-        from paypal_access_orders
+        from access_orders
         where promo_code is not null
         group by promo_code
       ) o on o.promo_code = p.code
@@ -1602,9 +1860,9 @@ async function deleteCodeRelatedHistory(client, { codes = [], orderIds = [] } = 
 
 async function getOrderRowsForAccessCodes(client, codes = []) {
   const cleanCodes = uniqueText(codes);
-  if (!cleanCodes.length || !(await tableExists("paypal_access_orders", client))) return [];
+  if (!cleanCodes.length || !(await tableExists("access_orders", client))) return [];
   const { rows } = await client.query(
-    `select order_id, access_code from paypal_access_orders where access_code = any($1::text[])`,
+    `select order_id, coalesce(access_code, entitlement_access_code) as access_code from access_orders where access_code = any($1::text[]) or entitlement_access_code = any($1::text[])`,
     [cleanCodes]
   );
   return rows;
@@ -1612,9 +1870,9 @@ async function getOrderRowsForAccessCodes(client, codes = []) {
 
 async function getOrderRowsForPromoCodes(client, promoCodes = []) {
   const codes = uniqueText(promoCodes);
-  if (!codes.length || !(await tableExists("paypal_access_orders", client))) return [];
+  if (!codes.length || !(await tableExists("access_orders", client))) return [];
   const { rows } = await client.query(
-    `select order_id, access_code from paypal_access_orders where promo_code = any($1::text[])`,
+    `select order_id, access_code from access_orders where promo_code = any($1::text[])`,
     [codes]
   );
   return rows;
@@ -1633,9 +1891,9 @@ async function getReferralPromoCodesForAccessCodes(client, codes = []) {
 
 async function deleteOrdersForAccessCodes(client, codes = []) {
   const cleanCodes = uniqueText(codes);
-  if (!cleanCodes.length || !(await tableExists("paypal_access_orders", client))) return 0;
+  if (!cleanCodes.length || !(await tableExists("access_orders", client))) return 0;
   const result = await client.query(
-    `delete from paypal_access_orders where access_code = any($1::text[])`,
+    `delete from access_orders where access_code = any($1::text[]) or entitlement_access_code = any($1::text[])`,
     [cleanCodes]
   );
   return result.rowCount || 0;
@@ -1643,9 +1901,9 @@ async function deleteOrdersForAccessCodes(client, codes = []) {
 
 async function deleteOrdersForPromoCodes(client, promoCodes = []) {
   const codes = uniqueText(promoCodes);
-  if (!codes.length || !(await tableExists("paypal_access_orders", client))) return 0;
+  if (!codes.length || !(await tableExists("access_orders", client))) return 0;
   const result = await client.query(
-    `delete from paypal_access_orders where promo_code = any($1::text[])`,
+    `delete from access_orders where promo_code = any($1::text[])`,
     [codes]
   );
   return result.rowCount || 0;
@@ -1664,7 +1922,7 @@ async function deleteAccessCodesByCode(client, codes = []) {
 async function getFeedbackData() {
   const enabled = await isFeedbackEnabled();
   const candidates = [];
-  if (await tableExists("paypal_access_orders")) {
+  if (await tableExists("access_orders")) {
     const result = await pool.query(`
       with ranked as (
         select
@@ -1678,7 +1936,7 @@ async function getFeedbackData() {
             partition by lower(trim(customer_email))
             order by coalesce(completed_at, created_at) desc, order_id desc
           ) as row_number
-        from paypal_access_orders
+        from access_orders
         where status = 'COMPLETED'
           and customer_email is not null
           and trim(customer_email) <> ''
@@ -1901,7 +2159,7 @@ async function deleteFeedbackTestResponses() {
 
 async function setupFeedbackPopupTest(body = {}) {
   if (!(await tableExists("access_codes"))) throw new AdminError("The access_codes table does not exist.", 500, "table_missing");
-  if (!(await tableExists("paypal_access_orders"))) throw new AdminError("The paypal_access_orders table does not exist.", 500, "table_missing");
+  if (!(await tableExists("access_orders"))) throw new AdminError("The access_orders table does not exist.", 500, "table_missing");
 
   await ensureUsageSchemaForFeedbackTest();
 
@@ -1944,7 +2202,7 @@ async function setupFeedbackPopupTest(body = {}) {
     );
     await client.query(
       `
-        insert into paypal_access_orders (
+        insert into access_orders (
           order_id, site_id, amount, currency, status, access_code, capture_id,
           payer_email, customer_email, payment_method, subtotal_amount, discount_amount,
           promo_code, email_status, completed_at, created_at, updated_at
@@ -2006,7 +2264,7 @@ async function deleteFeedbackPopupTests() {
       counts.promptStates = promptResult.rowCount || 0;
 
       const orderResult = await client.query(
-        `delete from paypal_access_orders where access_code = any($1::text[]) or order_id like 'POPUP-TEST-%'`,
+        `delete from access_orders where access_code = any($1::text[]) or entitlement_access_code = any($1::text[]) or order_id like 'POPUP-TEST-%'`,
         [codes]
       );
       counts.orders = orderResult.rowCount || 0;
@@ -2076,14 +2334,14 @@ async function sendFeedbackInvitations(body = {}) {
   if (invalid.length) throw new AdminError(`Invalid email address: ${invalid[0]}`, 400, "invalid_email");
 
   const orderByEmail = new Map();
-  if (await tableExists("paypal_access_orders")) {
+  if (await tableExists("access_orders")) {
     const keys = uniqueEmails.map((email) => email.toLowerCase());
     const result = await pool.query(
       `
         select distinct on (lower(trim(customer_email)))
                lower(trim(customer_email)) as email_key,
                order_id, site_id
-        from paypal_access_orders
+        from access_orders
         where status = 'COMPLETED'
           and lower(trim(customer_email)) = any($1::text[])
         order by lower(trim(customer_email)), coalesce(completed_at, created_at) desc, order_id desc
@@ -2149,7 +2407,7 @@ async function sendOneFeedbackInvitation(email, order = {}) {
         <p style="margin:0 0 22px;color:#475569">The form takes about one minute.</p>
         <a href="${escapeHtml(feedbackUrl)}" style="display:inline-block;padding:13px 20px;border-radius:11px;background:#0891b2;color:#ffffff;text-decoration:none;font-weight:700">Share feedback</a>
         <p style="margin:24px 0 0;font-size:12px;color:#64748b">This private link expires in ${FEEDBACK_INVITE_DAYS} days and can be submitted once.</p>
-        <p style="margin:8px 0 0;font-size:12px;color:#64748b">Need support? Reply to this email or contact <a href="mailto:${escapeHtml(SUPPORT_PUBLIC_EMAIL)}">${escapeHtml(SUPPORT_PUBLIC_EMAIL)}</a>.</p>
+        <p style="margin:8px 0 0;font-size:12px;color:#64748b">Need support? Reply to this email or <a href="${escapeHtml(PUBLIC_SITE_URL)}/support.html?source=%2Femail">contact support online</a>.</p>
       </div>
     </div>`;
 
@@ -2202,18 +2460,34 @@ async function sendOneFeedbackInvitation(email, order = {}) {
 
 async function listSupportTickets(body = {}) {
   const limit = clampInt(body.limit, 1, 200, 100);
-  const status = String(body.status || "ALL").toUpperCase();
+  const status = String(body.status || "UNRESOLVED").toUpperCase();
+  const search = String(body.search || "").trim().toLowerCase().slice(0, 200);
   const params = [];
-  let where = "";
-  if (["OPEN", "PENDING", "CLOSED"].includes(status)) {
+  const conditions = [];
+  if (["NEW", "OPEN", "RESOLVED"].includes(status)) {
     params.push(status);
-    where = `where t.status = $1`;
+    conditions.push(`t.status = $${params.length}`);
+  } else if (status === "UNRESOLVED") {
+    conditions.push(`t.status <> 'RESOLVED'`);
+  }
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`(
+      lower(t.from_email) like $${params.length}
+      or lower(coalesce(t.from_name, '')) like $${params.length}
+      or cast(t.id as text) like $${params.length}
+      or lower(coalesce(t.site_name, '')) like $${params.length}
+      or lower(coalesce(t.linked_order_id, '')) like $${params.length}
+      or lower(coalesce(t.linked_access_code, '')) like $${params.length}
+    )`);
   }
   params.push(limit);
+  const where = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const { rows } = await pool.query(
     `
       select t.id, t.from_name, t.from_email, t.subject, t.body_text,
-             t.status, t.is_read, t.received_at, t.last_activity_at,
+             t.status, t.source, t.site_name, t.linked_order_id, t.linked_access_code,
+             t.is_read, t.received_at, t.last_activity_at,
              jsonb_array_length(coalesce(t.attachments, '[]'::jsonb))::int as attachment_count,
              count(r.id)::int as reply_count
       from support_tickets t
@@ -2232,6 +2506,10 @@ async function listSupportTickets(body = {}) {
     subject: row.subject,
     snippet: String(row.body_text || "").replace(/\s+/g, " ").slice(0, 180),
     status: row.status,
+    source: row.source || "EMAIL",
+    siteName: row.site_name || "",
+    linkedOrderId: row.linked_order_id || "",
+    hasAccessContext: Boolean(row.linked_access_code),
     isRead: Boolean(row.is_read),
     receivedAt: row.received_at,
     lastActivityAt: row.last_activity_at,
@@ -2250,6 +2528,7 @@ async function getSupportTicket(body) {
     `select id, direction, from_email, body_text, sent_at, resend_email_id from support_replies where ticket_id = $1 order by sent_at`,
     [ticketId]
   );
+  const customerContext = await getSupportCustomerContext(ticket);
   return {
     ticket: {
       id: number(ticket.id),
@@ -2258,9 +2537,18 @@ async function getSupportTicket(body) {
       subject: ticket.subject,
       body: ticket.body_text,
       status: ticket.status,
+      source: ticket.source || "EMAIL",
+      sourceRoute: ticket.source_route || "",
+      siteId: ticket.site_id || "",
+      siteName: ticket.site_name || "",
+      machineId: ticket.machine_id || "",
+      contextMatch: ticket.context_match || "",
+      sessionReference: ticket.session_hash ? String(ticket.session_hash).slice(0, 12) : "",
+      userAgent: ticket.user_agent || "",
       receivedAt: ticket.received_at,
       attachments: Array.isArray(ticket.attachments) ? ticket.attachments : []
     },
+    customerContext,
     replies: repliesResult.rows.map((reply) => ({
       id: number(reply.id),
       direction: reply.direction || "OUTBOUND",
@@ -2270,6 +2558,142 @@ async function getSupportTicket(body) {
       resendEmailId: reply.resend_email_id || ""
     }))
   };
+}
+
+async function getSupportCustomerContext(ticket) {
+  const email = String(ticket.from_email || "").trim().toLowerCase();
+  const linkedOrderId = String(ticket.linked_order_id || "").trim();
+  let accessCode = String(ticket.linked_access_code || "").trim();
+  const siteMap = new Map(getPublicSites().map((site) => [site.id, site]));
+
+  const orderResult = await pool.query(
+    `
+      select order_id, site_id, amount, currency, status,
+             coalesce(access_code, entitlement_access_code) as access_code,
+             order_type, quantity, payment_method, provider_reference,
+             coalesce(completed_at, created_at) as purchased_at
+      from access_orders
+      where ($1 <> '' and lower(coalesce(nullif(customer_email, ''), payer_email, '')) = $1)
+         or ($2 <> '' and order_id = $2)
+         or ($3 <> '' and (access_code = $3 or entitlement_access_code = $3))
+      order by coalesce(completed_at, created_at) desc
+      limit 30
+    `,
+    [email, linkedOrderId, accessCode]
+  );
+  if (!accessCode) {
+    accessCode = String(orderResult.rows.find((row) => row.order_id === linkedOrderId)?.access_code || "").trim();
+  }
+
+  let access = null;
+  if (accessCode) {
+    const accessResult = await pool.query(
+      `
+        select code, site_id, active, source, weekly_limit, max_total_uses,
+               delete_after_use, expires_at, created_at
+        from access_codes
+        where code = $1 and deleted_at is null
+        limit 1
+      `,
+      [accessCode]
+    );
+    access = accessResult.rows[0] || null;
+  }
+
+  let weeklyUsed = 0;
+  let weeklyBonus = 0;
+  let totalUsed = 0;
+  let lastUsedAt = null;
+  if (accessCode && await tableExists("code_usage_weekly")) {
+    const usageResult = await pool.query(
+      `
+        select coalesce(sum(login_count), 0)::int as total_used,
+               coalesce(max(last_used_at), max(first_used_at)) as last_used_at,
+               coalesce(sum(login_count) filter (
+                 where week_start = date_trunc('week', now() at time zone 'UTC')::date
+               ), 0)::int as weekly_used
+        from code_usage_weekly
+        where code = $1
+      `,
+      [accessCode]
+    );
+    weeklyUsed = number(usageResult.rows[0]?.weekly_used);
+    totalUsed = number(usageResult.rows[0]?.total_used);
+    lastUsedAt = usageResult.rows[0]?.last_used_at || null;
+  }
+  if (accessCode && await tableExists("activation_upgrade_orders")) {
+    const bonusResult = await pool.query(
+      `
+        select coalesce(sum(bonus_activations), 0)::int as weekly_bonus
+        from activation_upgrade_orders
+        where access_code = $1
+          and status = 'COMPLETED'
+          and week_start = date_trunc('week', now() at time zone 'UTC')::date
+      `,
+      [accessCode]
+    );
+    weeklyBonus = number(bonusResult.rows[0]?.weekly_bonus);
+  }
+
+  const revenue = new Map();
+  orderResult.rows.filter((row) => row.status === "COMPLETED").forEach((row) => {
+    const currency = String(row.currency || "GBP").toUpperCase();
+    revenue.set(currency, (revenue.get(currency) || 0) + number(row.amount));
+  });
+  const orders = orderResult.rows.map((row) => ({
+    orderId: row.order_id,
+    siteId: row.site_id || "",
+    siteName: siteMap.get(row.site_id)?.name || row.site_id || "Unknown site",
+    amount: number(row.amount),
+    currency: row.currency || "GBP",
+    status: row.status,
+    orderType: row.order_type || "access_code",
+    quantity: Math.max(1, number(row.quantity) || 1),
+    paymentMethod: row.payment_method || "unknown",
+    providerReference: row.provider_reference || "",
+    accessCodeMasked: maskAccessCode(row.access_code),
+    purchasedAt: row.purchased_at
+  }));
+  const baseLimit = number(access?.weekly_limit);
+  const weeklyLimit = baseLimit + weeklyBonus;
+  const accessSiteId = String(access?.site_id || ticket.site_id || "").trim();
+
+  return {
+    matchedBy: ticket.context_match || (accessCode ? "ACCESS_CODE" : email ? "EMAIL" : ""),
+    linkedOrderId,
+    access: accessCode ? {
+      code: accessCode,
+      maskedCode: maskAccessCode(accessCode),
+      exists: Boolean(access),
+      active: Boolean(access?.active),
+      source: access?.source || "",
+      siteId: accessSiteId,
+      siteName: siteMap.get(accessSiteId)?.name || ticket.site_name || accessSiteId,
+      weeklyBaseLimit: baseLimit,
+      weeklyBonus,
+      weeklyLimit,
+      weeklyUsed,
+      weeklyRemaining: Math.max(0, weeklyLimit - weeklyUsed),
+      totalUsed,
+      lastUsedAt,
+      expiresAt: access?.expires_at || null,
+      createdAt: access?.created_at || null,
+      oneTime: Boolean(access?.delete_after_use) || number(access?.max_total_uses) === 1
+    } : null,
+    orders,
+    summary: {
+      totalOrders: orders.length,
+      completedOrders: orders.filter((order) => order.status === "COMPLETED").length,
+      revenue: [...revenue.entries()].map(([currency, amount]) => ({ currency, amount }))
+    }
+  };
+}
+
+function maskAccessCode(value) {
+  const code = String(value || "").trim();
+  if (!code) return "";
+  if (code.length <= 4) return "•".repeat(code.length);
+  return `${"•".repeat(Math.min(6, code.length - 4))}${code.slice(-4)}`;
 }
 
 async function replyToSupportTicket(body) {
@@ -2288,7 +2712,7 @@ async function replyToSupportTicket(body) {
   if (!ticket) throw new AdminError("Support message not found.", 404, "ticket_not_found");
 
   const cleanSubject = stripTicketToken(ticket.subject).replace(/^re:\s*/i, "").trim() || "Support request";
-  const subject = `Re: [LS-${ticketId}] ${cleanSubject}`;
+  const subject = `Re: [CW-${ticketId}] ${cleanSubject}`;
 
   const threadResult = await pool.query(
     `select message_id from support_replies where ticket_id = $1 and message_id is not null order by sent_at, id`,
@@ -2347,11 +2771,11 @@ async function replyToSupportTicket(body) {
   );
 
   await pool.query(
-    `update support_tickets set status = 'PENDING', is_read = true, last_activity_at = now(), updated_at = now() where id = $1`,
+    `update support_tickets set status = 'OPEN', is_read = true, last_activity_at = now(), updated_at = now() where id = $1`,
     [ticketId]
   );
 
-  return { ticketId, emailId: sentEmailId, status: "PENDING" };
+  return { ticketId, emailId: sentEmailId, status: "OPEN" };
 }
 
 function buildSupportReplyEmail({ message, ticketId }) {
@@ -2369,7 +2793,7 @@ function buildSupportReplyEmail({ message, ticketId }) {
 
           <div style="margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:1.5">
             <div>Reply to this email if you still need help.</div>
-            <div style="margin-top:6px">Ticket LS-${escapeHtml(ticketId)}</div>
+            <div style="margin-top:6px">Ticket CW-${escapeHtml(ticketId)}</div>
           </div>
         </div>
       </div>
@@ -2394,23 +2818,13 @@ async function retrieveSentMessageId(emailId) {
 async function setSupportStatus(body) {
   const ticketId = positiveId(body.ticketId);
   const status = String(body.status || "").toUpperCase();
-  if (!["OPEN", "PENDING", "CLOSED"].includes(status)) throw new AdminError("Invalid status.", 400, "invalid_status");
+  if (!["NEW", "OPEN", "RESOLVED"].includes(status)) throw new AdminError("Invalid status.", 400, "invalid_status");
   const result = await pool.query(
     `update support_tickets set status = $2, updated_at = now() where id = $1 returning id, status`,
     [ticketId, status]
   );
   if (!result.rows[0]) throw new AdminError("Support message not found.", 404, "ticket_not_found");
   return { ticketId, status };
-}
-
-async function deleteSupportTicket(body) {
-  const ticketId = positiveId(body.ticketId);
-  const result = await pool.query(
-    `delete from support_tickets where id = $1 returning id`,
-    [ticketId]
-  );
-  if (!result.rows[0]) throw new AdminError("Support message not found.", 404, "ticket_not_found");
-  return { ticketId, deleted: true };
 }
 
 function mapCode(row, site) {
@@ -2515,432 +2929,6 @@ function normalizeMessageId(value) {
 
 function stripTicketToken(subject) {
   return String(subject || "").replace(/\s*\[LS-\d+\]\s*/ig, " ").replace(/\s{2,}/g, " ").trim();
-}
-
-async function getStoreData() {
-  await ensureStoreSchema(pool);
-  await maintainStoreOrders(pool, { staleHours: STORE_ORDER_STALE_HOURS });
-  const [membersResult, productsResult, ordersResult, inviteCustomers] = await Promise.all([
-    pool.query(`
-      select
-        member.id,
-        member.access_code,
-        member.email,
-        member.active,
-        member.invite_limit,
-        member.invite_count,
-        member.store_credit_balance,
-        member.source,
-        member.invite_delivery,
-        member.laundry_access_code,
-        member.popup_enabled,
-        member.popup_claimed_at,
-        member.invite_email_status,
-        member.created_at,
-        member.last_used_at,
-             inviter.email as inviter_email,
-             inviter.access_code as inviter_code,
-        count(distinct child.id)::int as direct_invites,
-        count(distinct orders.order_id) filter (where orders.status = 'COMPLETED')::int as completed_orders
-      from store_members member
-      left join store_members inviter on inviter.id = member.invited_by_id
-      left join store_members child on child.invited_by_id = member.id
-      left join store_orders orders on orders.member_id = member.id
-      group by member.id, inviter.email, inviter.access_code
-      order by member.created_at desc
-      limit 500
-    `),
-    pool.query(`
-      select id, name, description, price, currency, image_url, active, sort_order, created_at, updated_at
-      from store_products
-      order by active desc, sort_order asc, created_at desc
-      limit 500
-    `),
-    pool.query(`
-      select order_id, order_number, product_name, image_url, quantity, amount, subtotal_amount,
-             credit_applied, credit_refunded_at, currency, customer_email,
-             recipient_name, address_line1, address_line2, city, postcode, country, status,
-             fulfilment_status, payment_method, referral_credit_awarded_at, payment_verified_at, created_at, completed_at, fulfilled_at
-      from store_orders
-      where status = 'COMPLETED'
-      order by created_at desc
-      limit 500
-    `),
-    getStoreInviteCustomers()
-  ]);
-
-  const members = membersResult.rows.map((row) => ({
-    id: Number(row.id),
-    code: row.access_code,
-    email: row.email || "",
-    active: Boolean(row.active),
-    inviteLimit: STORE_REFERRAL_LIMIT,
-    inviteCount: number(row.invite_count),
-    invitesRemaining: Math.max(0, STORE_REFERRAL_LIMIT - number(row.invite_count)),
-    unlimitedInvites: false,
-    creditBalance: number(row.store_credit_balance).toFixed(2),
-    directInvites: number(row.direct_invites),
-    completedOrders: number(row.completed_orders),
-    source: row.source || "ADMIN",
-    delivery: row.invite_delivery || "EMAIL",
-    laundryAccessCode: row.laundry_access_code || "",
-    popupEnabled: Boolean(row.popup_enabled),
-    popupClaimedAt: row.popup_claimed_at,
-    emailStatus: row.invite_email_status || "",
-    inviterEmail: row.inviter_email || "",
-    inviterCode: row.inviter_code || "",
-    createdAt: row.created_at,
-    lastUsedAt: row.last_used_at
-  }));
-  const products = productsResult.rows.map((row) => ({
-    id: Number(row.id),
-    name: row.name,
-    description: row.description || "",
-    price: number(row.price).toFixed(2),
-    currency: row.currency || "GBP",
-    imageUrl: row.image_url || "",
-    active: Boolean(row.active),
-    sortOrder: number(row.sort_order),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  }));
-  const orders = ordersResult.rows.map((row) => ({
-    orderId: row.order_id,
-    orderNumber: row.order_number || "",
-    productName: row.product_name,
-    imageUrl: row.image_url || "",
-    quantity: number(row.quantity),
-    amount: number(row.amount).toFixed(2),
-    subtotal: number(row.subtotal_amount ?? row.amount).toFixed(2),
-    creditApplied: number(row.credit_applied).toFixed(2),
-    creditRefundedAt: row.credit_refunded_at,
-    currency: row.currency || "GBP",
-    customerEmail: row.customer_email,
-    recipientName: row.recipient_name,
-    addressLine1: row.address_line1,
-    addressLine2: row.address_line2 || "",
-    city: row.city,
-    postcode: row.postcode,
-    country: row.country,
-    status: row.status,
-    fulfilmentStatus: row.fulfilment_status,
-    paymentMethod: row.payment_method || "stripe",
-    referralCreditAwardedAt: row.referral_credit_awarded_at,
-    paymentVerifiedAt: row.payment_verified_at,
-    createdAt: row.created_at,
-    completedAt: row.completed_at,
-    fulfilledAt: row.fulfilled_at
-  }));
-
-  return {
-    inviteCustomers,
-    members,
-    products,
-    orders,
-    summary: {
-      activeMembers: members.filter((member) => member.active).length,
-      memberInvites: members.filter((member) => member.source === "MEMBER").length,
-      activeProducts: products.filter((product) => product.active).length,
-      completedOrders: orders.filter((order) => order.status === "COMPLETED").length,
-      pendingFulfilment: orders.filter((order) => order.status === "COMPLETED" && order.fulfilmentStatus === "PENDING").length,
-      revenue: orders
-        .filter((order) => order.status === "COMPLETED")
-        .reduce((total, order) => total + number(order.amount), 0),
-      currency: products[0]?.currency || orders[0]?.currency || "GBP"
-    }
-  };
-}
-
-async function getStoreInviteCustomers() {
-  if (!(await tableExists("access_codes"))) return [];
-  const ordersExist = await tableExists("paypal_access_orders");
-  const orderJoin = ordersExist
-    ? `
-      left join lateral (
-        select trim(customer_email) as customer_email,
-               coalesce(completed_at, created_at) as purchased_at
-        from paypal_access_orders
-        where access_code = access.code
-          and status = 'COMPLETED'
-          and customer_email is not null
-          and trim(customer_email) <> ''
-        order by coalesce(completed_at, created_at) desc
-        limit 1
-      ) latest_order on true
-    `
-    : "";
-  const emailFields = ordersExist
-    ? "latest_order.customer_email, latest_order.purchased_at"
-    : "null::text as customer_email, null::timestamptz as purchased_at";
-  const emailAvailable = ordersExist
-    ? `and not exists (
-        select 1 from store_members existing_email
-        where existing_email.email is not null
-          and lower(existing_email.email) = lower(latest_order.customer_email)
-      )`
-    : "";
-  const result = await pool.query(`
-    select access.code, access.site_id, access.source, access.created_at,
-           ${emailFields}
-    from access_codes access
-    ${orderJoin}
-    where access.active = true
-      and access.deleted_at is null
-      and not exists (
-        select 1 from store_members existing_code
-        where existing_code.laundry_access_code = access.code
-      )
-      ${emailAvailable}
-    order by purchased_at desc nulls last, access.created_at desc nulls last, access.code
-    limit 500
-  `);
-  const siteMap = new Map(getPublicSites().map((site) => [site.id, site]));
-  return result.rows.map((row) => ({
-    code: row.code,
-    email: normalizeStoreEmail(row.customer_email, { allowBlank: true }),
-    siteId: row.site_id || "",
-    siteName: siteMap.get(row.site_id)?.name || row.site_id || "Unknown site",
-    source: row.source || "",
-    purchasedAt: row.purchased_at || null,
-    createdAt: row.created_at || null
-  }));
-}
-
-async function createStoreMember(body = {}) {
-  await ensureStoreSchema(pool);
-  const delivery = String(body.delivery || "EMAIL").trim().toUpperCase();
-  if (!["EMAIL", "POPUP", "BOTH"].includes(delivery)) {
-    throw new AdminError("Choose email, login popup, or both.", 400, "invalid_delivery");
-  }
-  const wantsEmail = delivery === "EMAIL" || delivery === "BOTH";
-  const wantsPopup = delivery === "POPUP" || delivery === "BOTH";
-  const laundryAccessCode = String(body.laundryAccessCode || "").trim();
-  if (!laundryAccessCode) throw new AdminError("Select a customer.", 400, "missing_laundry_code");
-  const accessCodeResult = await pool.query(`
-    select code from access_codes
-    where code = $1 and active = true and deleted_at is null
-    limit 1
-  `, [laundryAccessCode]);
-  if (!accessCodeResult.rows.length) {
-    throw new AdminError("That customer's laundry access code is not active.", 404, "laundry_code_not_found");
-  }
-  const linked = await pool.query(`select 1 from store_members where laundry_access_code = $1 limit 1`, [laundryAccessCode]);
-  if (linked.rows.length) throw new AdminError("That customer already has a store invitation.", 409, "already_invited");
-  let email = "";
-  if (await tableExists("paypal_access_orders")) {
-    const orderEmail = await pool.query(`
-      select customer_email from paypal_access_orders
-      where access_code = $1 and status = 'COMPLETED' and customer_email is not null
-      order by coalesce(completed_at, created_at) desc
-      limit 1
-    `, [laundryAccessCode]);
-    email = normalizeStoreEmail(orderEmail.rows[0]?.customer_email, { allowBlank: true });
-  }
-  if (wantsEmail && !email) {
-    throw new AdminError("This customer has no valid email on file. Choose laundry login popup.", 400, "customer_email_unavailable");
-  }
-  const inviteLimit = STORE_REFERRAL_LIMIT;
-  if (email) {
-    const existing = await pool.query(`select 1 from store_members where lower(email) = $1 limit 1`, [email]);
-    if (existing.rows.length) throw new AdminError("That email already has store access.", 409, "already_invited");
-  }
-
-  const code = await createUniqueStoreCode(pool, 6);
-  let inserted;
-  try {
-    inserted = await pool.query(`
-      insert into store_members
-        (access_code, email, active, invite_limit, invite_count, source, invite_delivery,
-         laundry_access_code, popup_enabled, created_at, updated_at)
-      values ($1, $2, true, $3, 0, 'ADMIN', $4, $5, $6, now(), now())
-      returning *
-    `, [code, email || null, inviteLimit, delivery, laundryAccessCode, wantsPopup]);
-  } catch (error) {
-    if (error?.code === "23505") throw new AdminError("That email or laundry code already has store access.", 409, "already_invited");
-    throw error;
-  }
-
-  const link = `${PUBLIC_SITE_URL}/store.html?code=${encodeURIComponent(code)}`;
-  const emailResult = wantsEmail
-    ? await sendStoreInviteEmail(email, code, link)
-    : { status: "NOT_REQUESTED", error: "" };
-  await pool.query(`
-    update store_members
-    set invite_email_status = $2, invite_email_error = $3, updated_at = now()
-    where id = $1
-  `, [inserted.rows[0].id, emailResult.status, emailResult.error || null]);
-
-  return { code, email, link, inviteLimit, delivery, popupEnabled: wantsPopup, emailStatus: emailResult.status };
-}
-
-async function setStoreMemberActive(body = {}) {
-  const memberId = positiveId(body.memberId);
-  const active = Boolean(body.active);
-  const result = await pool.query(`
-    update store_members set active = $2, updated_at = now() where id = $1 returning id
-  `, [memberId, active]);
-  if (!result.rows.length) throw new AdminError("Store member not found.", 404, "member_not_found");
-  return { memberId, active };
-}
-
-async function setStoreMemberInviteLimit(body = {}) {
-  const memberId = positiveId(body.memberId);
-  const inviteLimit = STORE_REFERRAL_LIMIT;
-  const result = await pool.query(`
-    update store_members set invite_limit = $2, updated_at = now() where id = $1 returning id
-  `, [memberId, inviteLimit]);
-  if (!result.rows.length) throw new AdminError("Store member not found.", 404, "member_not_found");
-  return { memberId, inviteLimit };
-}
-
-async function createStoreProduct(body = {}) {
-  const product = normalizeStoreProduct(body);
-  const result = await pool.query(`
-    insert into store_products
-      (name, description, price, currency, image_url, active, sort_order, created_at, updated_at)
-    values ($1, $2, $3::numeric, 'GBP', $4, $5, $6, now(), now())
-    returning id
-  `, [product.name, product.description, product.price, product.imageUrl, product.active, product.sortOrder]);
-  return { productId: Number(result.rows[0].id) };
-}
-
-async function updateStoreProduct(body = {}) {
-  const productId = positiveId(body.productId);
-  const product = normalizeStoreProduct(body);
-  const result = await pool.query(`
-    update store_products
-    set name = $2, description = $3, price = $4::numeric, image_url = $5,
-        active = $6, sort_order = $7, updated_at = now()
-    where id = $1
-    returning id
-  `, [productId, product.name, product.description, product.price, product.imageUrl, product.active, product.sortOrder]);
-  if (!result.rows.length) throw new AdminError("Store product not found.", 404, "product_not_found");
-  return { productId };
-}
-
-async function deleteStoreProduct(body = {}) {
-  const productId = positiveId(body.productId);
-  const result = await pool.query(`delete from store_products where id = $1 returning id`, [productId]);
-  if (!result.rows.length) throw new AdminError("Store product not found.", 404, "product_not_found");
-  return { productId };
-}
-
-async function setStoreOrderFulfilment(body = {}) {
-  const orderId = String(body.orderId || "").trim();
-  if (!/^[A-Za-z0-9_-]{6,255}$/.test(orderId)) throw new AdminError("Invalid order.", 400, "invalid_order");
-  const fulfilmentStatus = String(body.fulfilmentStatus || "").trim().toUpperCase();
-  if (!["PENDING", "PROCESSING", "SHIPPED", "CANCELLED"].includes(fulfilmentStatus)) {
-    throw new AdminError("Invalid fulfilment status.", 400, "invalid_fulfilment_status");
-  }
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    const locked = await client.query(`
-      select * from store_orders where order_id = $1 and status = 'COMPLETED' limit 1 for update
-    `, [orderId]);
-    const order = locked.rows[0];
-    if (!order) throw new AdminError("Completed store order not found.", 404, "order_not_found");
-    if (order.fulfilment_status === "CANCELLED" && fulfilmentStatus !== "CANCELLED") {
-      throw new AdminError("Cancelled orders cannot be reopened after credit is returned.", 409, "order_cancelled");
-    }
-    const shouldRefundCredit = fulfilmentStatus === "CANCELLED"
-      && Number(order.member_id)
-      && Number(order.credit_applied) > 0
-      && !order.credit_refunded_at;
-    if (shouldRefundCredit) {
-      await client.query(`
-        update store_members
-        set store_credit_balance = store_credit_balance + $2::numeric, updated_at = now()
-        where id = $1
-      `, [order.member_id, Number(order.credit_applied).toFixed(2)]);
-    }
-    await client.query(`
-      update store_orders
-      set fulfilment_status = $2,
-          fulfilled_at = case when $2 = 'SHIPPED' then coalesce(fulfilled_at, now()) else null end,
-          credit_refunded_at = case when $3::boolean then now() else credit_refunded_at end,
-          updated_at = now()
-      where order_id = $1
-    `, [orderId, fulfilmentStatus, Boolean(shouldRefundCredit)]);
-    await client.query("commit");
-    return { orderId, fulfilmentStatus, creditRestored: shouldRefundCredit ? Number(order.credit_applied).toFixed(2) : "0.00" };
-  } catch (error) {
-    await client.query("rollback").catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-async function cleanupStoreStaleOrders(body = {}) {
-  const olderThanHours = clampInt(body.olderThanHours, 1, 168, STORE_ORDER_STALE_HOURS);
-  return cleanupStaleStoreOrders(pool, { staleHours: olderThanHours });
-}
-
-function normalizeStoreProduct(body = {}) {
-  const name = String(body.name || "").trim().replace(/\s+/g, " ").slice(0, 120);
-  const description = String(body.description || "").trim().slice(0, 1000);
-  const priceValue = Number(body.price);
-  const price = Number.isFinite(priceValue) ? priceValue.toFixed(2) : "";
-  const imageUrl = String(body.imageUrl || "").trim().slice(0, 2000);
-  const sortOrder = clampInt(body.sortOrder, -1000, 1000, 0);
-  if (!name) throw new AdminError("Enter a product name.", 400, "invalid_product_name");
-  if (!price || priceValue <= 0 || priceValue > 10000) {
-    throw new AdminError("Enter a product price between 0.01 and 10000.", 400, "invalid_product_price");
-  }
-  const localAssetPath = /^\/[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(imageUrl)
-    && !imageUrl.includes("//")
-    && !imageUrl.split("/").some((segment) => segment === "." || segment === "..");
-  if (imageUrl && !/^https?:\/\/[^\s]+$/i.test(imageUrl) && !localAssetPath) {
-    throw new AdminError("Use an http URL or a root-relative local path such as /storeassets/img1.jpg.", 400, "invalid_image_url");
-  }
-  return { name, description, price, imageUrl, sortOrder, active: body.active !== false };
-}
-
-async function sendStoreInviteEmail(email, code, link) {
-  if (!RESEND_API_KEY || !STORE_EMAIL_FROM) return { status: "NOT_CONFIGURED", error: "" };
-  const subject = "Your CircuitWash store invitation";
-  const text = [
-    "You've been invited to the secret store.",
-    `Store access code: ${code}`,
-    `Press the icon: ${link}`,
-    `Need help? Contact ${SUPPORT_PUBLIC_EMAIL}.`
-  ].join("\n\n");
-  const html = `
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#111827;line-height:1.55">
-      <div style="padding:28px;border:1px solid #d1d5db;border-radius:12px;background:#ffffff">
-        <div style="font-size:12px;font-weight:800;text-transform:uppercase;color:#6d28d9">CircuitWash Store</div>
-        <h1 style="margin:10px 0 8px;font-size:26px">You've been invited to the secret store</h1>
-        <p style="margin:0 0 18px;color:#4b5563">Press the icon to open it.</p>
-        <div style="padding:15px;border:1px solid #ddd6fe;border-radius:10px;background:#f5f3ff;font-size:28px;font-weight:800;letter-spacing:.12em">${escapeHtml(code)}</div>
-        <a href="${escapeHtml(link)}" style="display:inline-block;margin-top:20px;padding:12px 18px;border-radius:8px;background:#6d28d9;color:#ffffff;text-decoration:none;font-weight:700">Open store</a>
-        <p style="margin:22px 0 0;font-size:12px;color:#6b7280">Need help? ${escapeHtml(SUPPORT_PUBLIC_EMAIL)}</p>
-      </div>
-    </div>`;
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": `admin-store-invite-${crypto.randomUUID()}`
-      },
-      body: JSON.stringify({
-        from: STORE_EMAIL_FROM,
-        to: [email],
-        reply_to: [SUPPORT_PUBLIC_EMAIL],
-        subject,
-        text,
-        html
-      })
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.id) throw new Error(result.message || `Resend returned ${response.status}`);
-    return { status: "SENT", error: "" };
-  } catch (error) {
-    console.error("[admin-api] store invite email failed:", error?.stack || error);
-    return { status: "FAILED", error: String(error?.message || error).slice(0, 500) };
-  }
 }
 
 function isValidEmail(value) {

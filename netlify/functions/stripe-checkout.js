@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { getSiteById } = require("./_site-data");
+const { ensureOrderStorage } = require("./_order-storage");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -13,7 +14,7 @@ const PRICE = normalizeMoney(process.env.ACCESS_CODE_PRICE || "3.00");
 const ACCESS_DURATION_YEARS = clampInt(process.env.ACCESS_DURATION_YEARS || "1", 1, 10, 1);
 const ACCESS_WEEKLY_LIMIT = clampInt(process.env.ACCESS_WEEKLY_LIMIT || "4", 1, 100, 4);
 const ACTIVATION_UPGRADE_PRICE = "5.00";
-const ACTIVATION_UPGRADE_BONUS = 2;
+const ACTIVATION_UPGRADE_BONUS = 3;
 const MIN_ORDER_TOTAL = normalizeMoney(process.env.PROMO_MIN_ORDER_TOTAL || "0.01");
 const BRAND_NAME = String(process.env.STRIPE_BRAND_NAME || process.env.ACCESS_CODE_BRAND_NAME || "CircuitWash").slice(0, 127);
 const CODE_LENGTH = normalizeCodeLength(process.env.ACCESS_CODE_LENGTH || "5");
@@ -194,7 +195,7 @@ async function createPaymentIntent(siteId, customerEmailValue, promoCodeValue = 
 
   await pool.query(
     `
-      insert into paypal_access_orders
+      insert into access_orders
         (order_id, site_id, amount, currency, status, customer_email, email_status, payment_method,
          subtotal_amount, discount_amount, promo_code, created_at, updated_at)
       values ($1, $2, $3::numeric, $4, 'CREATED', $5, 'PENDING', $6, $7::numeric, $8::numeric, $9, now(), now())
@@ -471,12 +472,14 @@ async function completeActivationUpgradeIntent(paymentIntentId, { preview = fals
       throw new PublicError("The upgrade payment reference does not match.", 409, "order_mismatch");
     }
     accessCode = order.access_code;
+    const weekStart = getWeekStartUTC();
     if (order.status !== "COMPLETED") {
       await client.query(
         `update activation_upgrade_orders set status = 'COMPLETED', week_start = $2::date, completed_at = now() where order_id = $1`,
-        [order.order_id, getWeekStartUTC()]
+        [order.order_id, weekStart]
       );
     }
+    await persistActivationUpgradeOrder(client, order, paymentIntentId, weekStart);
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch (_) {}
@@ -520,6 +523,7 @@ async function completeActivationUpgrade(sessionId) {
     }
 
     accessCode = order.access_code;
+    const weekStart = getWeekStartUTC();
     if (order.status !== "COMPLETED") {
       await client.query(
         `
@@ -527,9 +531,10 @@ async function completeActivationUpgrade(sessionId) {
           set status = 'COMPLETED', week_start = $2::date, completed_at = now()
           where order_id = $1
         `,
-        [order.order_id, getWeekStartUTC()]
+        [order.order_id, weekStart]
       );
     }
+    await persistActivationUpgradeOrder(client, order, String(session.payment_intent || session.id), weekStart);
     await client.query("COMMIT");
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch (_) {}
@@ -546,6 +551,105 @@ async function completeActivationUpgrade(sessionId) {
     weeklyRemaining: usage.remaining,
     weeklyResetAt: usage.resetAt
   };
+}
+
+async function persistActivationUpgradeOrder(db, upgradeOrder, providerReference, weekStart) {
+  const contextResult = await db.query(
+    `
+      select ac.site_id,
+             (
+               select coalesce(nullif(o.customer_email, ''), o.payer_email)
+               from access_orders o
+               where o.access_code = ac.code
+               order by o.completed_at desc nulls last, o.created_at desc
+               limit 1
+             ) as customer_email
+      from access_codes ac
+      where ac.code = $1
+      limit 1
+    `,
+    [upgradeOrder.access_code]
+  );
+  const context = contextResult.rows[0];
+  if (!context?.site_id) throw new PublicError("The upgraded access code has no site.", 409, "order_context_missing");
+
+  await db.query(
+    `
+      insert into access_orders (
+        order_id, site_id, amount, currency, status, customer_email, payer_email,
+        email_status, payment_method, order_type, quantity,
+        entitlement_access_code, entitlement_week_start, entitlement_week_end,
+        provider_reference, subtotal_amount, discount_amount,
+        created_at, updated_at, completed_at
+      ) values (
+        $1, $2, $3::numeric, $4, 'COMPLETED', $5, $5,
+        'NOT_REQUIRED', 'stripe', 'weekly_activation_addon', $6,
+        $7, $8::date, ($8::date + interval '7 days')::date,
+        $9, $3::numeric, 0,
+        coalesce($10::timestamptz, now()), now(), now()
+      )
+      on conflict (order_id) do nothing
+    `,
+    [
+      upgradeOrder.order_id,
+      context.site_id,
+      upgradeOrder.amount,
+      upgradeOrder.currency,
+      context.customer_email || null,
+      Math.max(1, Number(upgradeOrder.bonus_activations || ACTIVATION_UPGRADE_BONUS)),
+      upgradeOrder.access_code,
+      weekStart,
+      providerReference,
+      upgradeOrder.created_at || null
+    ]
+  );
+}
+
+async function backfillCompletedActivationUpgradeOrders(db) {
+  await db.query(`
+    insert into access_orders (
+      order_id, site_id, amount, currency, status, customer_email, payer_email,
+      email_status, payment_method, order_type, quantity,
+      entitlement_access_code, entitlement_week_start, entitlement_week_end,
+      provider_reference, subtotal_amount, discount_amount,
+      created_at, updated_at, completed_at
+    )
+    select
+      upgrade.order_id,
+      access.site_id,
+      upgrade.amount,
+      upgrade.currency,
+      'COMPLETED',
+      original.customer_email,
+      original.customer_email,
+      'NOT_REQUIRED',
+      'stripe',
+      'weekly_activation_addon',
+      greatest(upgrade.bonus_activations, 1),
+      upgrade.access_code,
+      upgrade.week_start,
+      (upgrade.week_start + interval '7 days')::date,
+      coalesce(upgrade.payment_intent_id, upgrade.stripe_session_id),
+      upgrade.amount,
+      0,
+      upgrade.created_at,
+      now(),
+      upgrade.completed_at
+    from activation_upgrade_orders upgrade
+    join access_codes access on access.code = upgrade.access_code
+    left join lateral (
+      select coalesce(nullif(orders.customer_email, ''), orders.payer_email) as customer_email
+      from access_orders orders
+      where orders.access_code = upgrade.access_code
+      order by orders.completed_at desc nulls last, orders.created_at desc
+      limit 1
+    ) original on true
+    where upgrade.status = 'COMPLETED'
+      and upgrade.completed_at is not null
+      and upgrade.week_start is not null
+      and coalesce(upgrade.payment_intent_id, upgrade.stripe_session_id) is not null
+    on conflict (order_id) do nothing
+  `);
 }
 
 async function getActivationUpgradeUsage(accessCode, db = pool) {
@@ -631,7 +735,7 @@ async function getCheckoutPricing(promoCodeValue = "", siteIdValue = "", db = po
   }
   if (promo.max_redemptions) {
     const usage = await db.query(
-      `select count(*)::int as redemptions from paypal_access_orders where promo_code = $1`,
+      `select count(*)::int as redemptions from access_orders where promo_code = $1`,
       [code]
     );
     if (Number(usage.rows[0]?.redemptions || 0) >= Number(promo.max_redemptions)) {
@@ -759,7 +863,7 @@ async function saveAccessCode(storedOrder, verified) {
   try {
     await client.query("BEGIN");
     const lockedResult = await client.query(
-      `select * from paypal_access_orders where order_id = $1 for update`,
+      `select * from access_orders where order_id = $1 for update`,
       [storedOrder.order_id]
     );
     const locked = lockedResult.rows[0];
@@ -775,7 +879,7 @@ async function saveAccessCode(storedOrder, verified) {
 
     const updatedResult = await client.query(
       `
-        update paypal_access_orders
+        update access_orders
         set status = 'COMPLETED',
             access_code = $2,
             capture_id = $3,
@@ -820,7 +924,7 @@ async function claimFreeAccessCode(siteId, customerEmailValue, promoCodeValue = 
 
     const inserted = await client.query(
       `
-        insert into paypal_access_orders
+        insert into access_orders
           (order_id, site_id, amount, currency, status, customer_email, email_status, payment_method,
            subtotal_amount, discount_amount, promo_code, access_code, capture_id, payer_email,
            completed_at, created_at, updated_at)
@@ -834,7 +938,7 @@ async function claimFreeAccessCode(siteId, customerEmailValue, promoCodeValue = 
     const code = await createAccessCodeForOrder(client, order);
     const updated = await client.query(
       `
-        update paypal_access_orders
+        update access_orders
         set access_code = $2,
             updated_at = now()
         where order_id = $1
@@ -908,7 +1012,7 @@ async function ensureAccessCodeEmail(row, { forceRetry = false } = {}) {
 
   const claimedResult = await pool.query(
     `
-      update paypal_access_orders
+      update access_orders
       set email_status = 'SENDING',
           email_error = null,
           updated_at = now()
@@ -933,7 +1037,7 @@ async function ensureAccessCodeEmail(row, { forceRetry = false } = {}) {
     const emailId = await sendAccessCodeEmail(claimed);
     const sentResult = await pool.query(
       `
-        update paypal_access_orders
+        update access_orders
         set email_status = 'SENT',
             email_id = $2,
             email_sent_at = now(),
@@ -949,7 +1053,7 @@ async function ensureAccessCodeEmail(row, { forceRetry = false } = {}) {
     console.error("[stripe-checkout] email failed:", error?.stack || error);
     const failedResult = await pool.query(
       `
-        update paypal_access_orders
+        update access_orders
         set email_status = 'FAILED',
             email_error = $2,
             updated_at = now()
@@ -997,7 +1101,7 @@ async function sendAccessCodeEmail(row) {
         <a href="${escapeHtml(activateUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#0891b2;color:white;text-decoration:none;font-weight:700">Activate machine</a>
       </p>
       <p style="font-size:12px;color:#64748b">Stripe checkout: ${escapeHtml(row.order_id)}</p>
-      <p style="font-size:12px;color:#64748b">Need help? <a href="mailto:${escapeHtml(SUPPORT_PUBLIC_EMAIL)}" style="color:#0e7490">${escapeHtml(SUPPORT_PUBLIC_EMAIL)}</a></p>
+      <p style="font-size:12px;color:#64748b">Need help? <a href="${escapeHtml(PUBLIC_SITE_URL)}/support.html?source=%2Femail" style="color:#0e7490">Contact support</a></p>
     </div>`;
 
   const response = await fetch("https://api.resend.com/emails", {
@@ -1065,7 +1169,7 @@ function completedResponse(row, emailStatusOverride = "", accessMeta = {}) {
 
 async function getPaymentOrder(orderId) {
   const { rows } = await pool.query(
-    `select * from paypal_access_orders where order_id = $1 limit 1`,
+    `select * from access_orders where order_id = $1 limit 1`,
     [orderId]
   );
   return rows[0] || null;
@@ -1073,6 +1177,10 @@ async function getPaymentOrder(orderId) {
 
 async function ensurePaymentTable() {
   if (paymentTableReady) return;
+
+  // Rename historical provider-specific storage before creating the canonical
+  // table so an existing deployment never forks into two order sources.
+  await ensureOrderStorage(pool);
 
   await pool.query(`
     create table if not exists access_codes (
@@ -1113,7 +1221,7 @@ async function ensurePaymentTable() {
   `);
 
   await pool.query(`
-    create table if not exists paypal_access_orders (
+    create table if not exists access_orders (
       order_id text primary key,
       site_id text not null,
       amount numeric(10, 2) not null,
@@ -1123,7 +1231,13 @@ async function ensurePaymentTable() {
       capture_id text unique,
       payer_email text,
       customer_email text,
-      payment_method text,
+      payment_method text not null default 'unknown',
+      order_type text not null default 'access_code',
+      quantity integer not null default 1,
+      entitlement_access_code text,
+      entitlement_week_start date,
+      entitlement_week_end date,
+      provider_reference text,
       subtotal_amount numeric(10, 2),
       discount_amount numeric(10, 2) not null default 0,
       promo_code text references promo_codes(code),
@@ -1164,7 +1278,7 @@ async function ensurePaymentTable() {
       stripe_session_id text unique,
       payment_intent_id text unique,
       access_code text not null references access_codes(code) on delete cascade,
-      bonus_activations integer not null default 2,
+      bonus_activations integer not null default 3,
       amount numeric(10, 2) not null default 10,
       currency varchar(3) not null default 'GBP',
       status text not null default 'CREATED',
@@ -1173,6 +1287,7 @@ async function ensurePaymentTable() {
       completed_at timestamptz
     )
   `);
+  await pool.query(`alter table activation_upgrade_orders alter column bonus_activations set default 3`);
   await pool.query(`alter table activation_upgrade_orders add column if not exists payment_intent_id text`);
   await pool.query(`create unique index if not exists activation_upgrade_payment_intent_idx on activation_upgrade_orders(payment_intent_id) where payment_intent_id is not null`);
   await pool.query(`create index if not exists activation_upgrade_code_week_idx on activation_upgrade_orders(access_code, week_start, status)`);
@@ -1180,9 +1295,15 @@ async function ensurePaymentTable() {
   await pool.query(`create index if not exists checkout_attempts_email_created_idx on checkout_create_order_attempts(email_hash, created_at desc)`);
 
   await pool.query(`
-    alter table paypal_access_orders
+    alter table access_orders
       add column if not exists customer_email text,
       add column if not exists payment_method text,
+      add column if not exists order_type text not null default 'access_code',
+      add column if not exists quantity integer not null default 1,
+      add column if not exists entitlement_access_code text,
+      add column if not exists entitlement_week_start date,
+      add column if not exists entitlement_week_end date,
+      add column if not exists provider_reference text,
       add column if not exists subtotal_amount numeric(10, 2),
       add column if not exists discount_amount numeric(10, 2) not null default 0,
       add column if not exists promo_code text,
@@ -1193,10 +1314,17 @@ async function ensurePaymentTable() {
   `);
 
   await pool.query(`
-    update paypal_access_orders
-    set subtotal_amount = amount
-    where subtotal_amount is null
+    update access_orders
+    set subtotal_amount = amount,
+        order_type = coalesce(nullif(order_type, ''), 'access_code'),
+        quantity = greatest(coalesce(quantity, 1), 1)
+    where subtotal_amount is null or order_type is null or order_type = '' or quantity is null or quantity < 1
   `);
+  await pool.query(`alter table access_orders drop constraint if exists access_orders_provider_reference_key`);
+  await pool.query(`drop index if exists access_orders_provider_reference_idx`);
+  await pool.query(`create unique index if not exists access_orders_provider_reference_provider_idx on access_orders(payment_method, provider_reference) where provider_reference is not null`);
+  await pool.query(`create index if not exists access_orders_type_completed_idx on access_orders(order_type, completed_at desc) where status = 'COMPLETED'`);
+  await backfillCompletedActivationUpgradeOrders(pool);
 
   await pool.query(`
     alter table access_codes
@@ -1517,3 +1645,9 @@ function json(value, statusCode = 200) {
     body: JSON.stringify(value)
   };
 }
+
+exports._test = {
+  persistActivationUpgradeOrder,
+  backfillCompletedActivationUpgradeOrders,
+  getWeekStartUTC
+};

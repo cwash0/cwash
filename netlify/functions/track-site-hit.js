@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { getSiteById } = require("./_site-data");
+const { normalizeAnalyticsEnvironment, validateAnalyticsSite } = require("./_analytics-validity");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -34,6 +35,8 @@ exports.handler = async (event) => {
     const siteId = String(body.siteId || "").trim();
     const site = getSiteById(siteId);
     if (!site) return json({ ok: false, error: "invalid_site" }, 400);
+    const siteValidation = validateAnalyticsSite(site);
+    if (!siteValidation.valid) return json({ ok: true, recorded: false, reason: siteValidation.reason });
 
     await ensureSchema();
 
@@ -42,6 +45,8 @@ exports.handler = async (event) => {
     const sessionHash = hashOptional(body.sessionId);
     const visitorHash = hashOptional(body.visitorId);
     const bot = detectBot({ event, body, userAgent });
+    const environment = normalizeAnalyticsEnvironment(process.env.CONTEXT || process.env.NODE_ENV);
+    const isTest = environment !== "production";
 
     if (sessionHash || visitorHash) {
       const duplicate = await pool.query(
@@ -81,9 +86,10 @@ exports.handler = async (event) => {
         insert into site_interest_hits (
           site_id, search_mode, search_query, page_path, referrer,
           visitor_hash, session_hash, ip_hash, user_agent,
-          is_bot, bot_reason, created_at
+          is_bot, bot_reason, is_test, environment, valid, validation_reason,
+          source, record_type, created_at
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true, '', 'public_site', 'site_selection', now())
       `,
       [
         site.id,
@@ -96,7 +102,9 @@ exports.handler = async (event) => {
         ipHash,
         userAgent,
         bot.isBot,
-        bot.reason
+        bot.reason,
+        isTest,
+        environment
       ]
     );
 
@@ -124,6 +132,12 @@ async function ensureSchema() {
       user_agent text,
       is_bot boolean not null default false,
       bot_reason text,
+      is_test boolean not null default false,
+      environment text not null default 'production',
+      valid boolean not null default true,
+      validation_reason text not null default '',
+      source text not null default 'public_site',
+      record_type text not null default 'site_selection',
       order_id text,
       converted_at timestamptz,
       created_at timestamptz not null default now()
@@ -131,6 +145,12 @@ async function ensureSchema() {
   `);
   await pool.query(`
     alter table site_interest_hits
+      add column if not exists is_test boolean not null default false,
+      add column if not exists environment text not null default 'production',
+      add column if not exists valid boolean not null default true,
+      add column if not exists validation_reason text not null default '',
+      add column if not exists source text not null default 'public_site',
+      add column if not exists record_type text not null default 'site_selection',
       add column if not exists order_id text,
       add column if not exists converted_at timestamptz
   `);

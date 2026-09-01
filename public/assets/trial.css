@@ -126,7 +126,8 @@ h1 {
 
 .section-title-row { margin-bottom: 18px; }
 
-h2 {
+h2,
+.section-title-row h1 {
   margin: 0;
   font-size: clamp(1.85rem, 6vw, 2.55rem);
   line-height: 1.05;

@@ -62,6 +62,7 @@ const els = {
   modal: document.getElementById("trialSiteModal"),
   closeModal: document.getElementById("closeTrialSiteModal"),
   search: document.getElementById("trialChangeSiteSearch"),
+  searchSpinner: document.getElementById("trialChangeSiteSearchSpinner"),
   results: document.getElementById("trialChangeSiteResults"),
   siteMessage: document.getElementById("trialChangeSiteMessage")
 };
@@ -74,13 +75,7 @@ let trialToken = "";
 let machines = [];
 let selectedMachineKey = "";
 let connectedDeviceName = "";
-const searchMode = "all";
 let searchTimer = null;
-let siteCompactHeight = 0;
-let siteResizeFrame = 0;
-let siteScrollResetFrame = 0;
-let siteFullViewportHeight = 0;
-let siteSearchStarted = false;
 let device = null;
 let server = null;
 let service = null;
@@ -95,6 +90,17 @@ let bluefyCopyToastTimer = null;
 let machinePickerReturnFocus = null;
 let currentSite = null;
 let currentOutcomeContext = null;
+
+const trialSiteSelector = window.CircuitWashSiteSelector.create({
+  input: els.search,
+  results: els.results,
+  spinner: els.searchSpinner,
+  currentSiteId: () => currentSite?.id || "",
+  onSelect: (site, button, state) => {
+    if (state.selected || String(site.id || "") === String(currentSite?.id || "")) closeSiteModal();
+    else changeSite(site, button);
+  }
+});
 
 function readClaim() {
   try {
@@ -191,7 +197,7 @@ function setStatus(text, tone = "") {
   const normalised = String(text || "").trim();
   const lower = normalised.toLowerCase();
   let state = "ready";
-  let title = "Ready to activate";
+  let title = "Ready to connect";
 
   if (lower.includes("connecting")) {
     state = "connecting";
@@ -204,7 +210,7 @@ function setStatus(text, tone = "") {
     title = `${machineName} started`;
   } else if (tone === "ok" || (lower.includes("connected") && !lower.includes("not connected"))) {
     state = "connected";
-    title = "Choose a cycle";
+    title = `Connected to ${machineName}`;
   } else if (tone === "bad" || lower.includes("couldn") || lower.includes("unavailable")) {
     state = lower.includes("couldn’t start") || lower.includes("couldn't start") ? "start-error" : "error";
     title = lower.includes("bluetooth unavailable") ? "Bluetooth unavailable" : normalised || `Couldn’t connect to ${machineName}`;
@@ -290,9 +296,14 @@ function showActivationOutcome(state, context = {}) {
     els.allowance.textContent = "Free start complete";
     setActivity("Machine activated", details.machineName, "ok");
     renderContinuationPrompt();
+    window.CircuitWashAnalytics?.track("trial_conversion_screen_viewed", {
+      source: "trial-completion",
+      auth_state: "anonymous",
+      trial_eligibility: "used"
+    }, { once: "trial_conversion_screen_viewed" });
   } else if (state === "uncertain") {
     els.outcomeTitle.textContent = details.machineName ? `We couldn’t confirm ${details.machineName}` : "We couldn’t confirm the machine start";
-    els.outcomeReassurance.textContent = "The start may have reached the machine. Check it before trying again, or contact support with the details below.";
+    els.outcomeReassurance.textContent = "The start may have reached the machine. Check it before trying again. If you need help, open the menu in the top right.";
     setActivity("Activation unconfirmed", details.machineName, "warn");
   } else {
     els.outcomeTitle.textContent = details.machineName ? `${details.machineName} didn’t start` : "The machine didn’t start";
@@ -328,7 +339,7 @@ function applySession(data) {
   renderMachines();
   renderCycles();
   setConnectedUI(false);
-  setStatus(machines.length ? `ready to activate (${machines[0].name})` : "no machines available");
+  setStatus(machines.length ? `ready to connect (${machines[0].name})` : "no machines available");
   setActivity("Ready", "", "");
 }
 
@@ -410,7 +421,7 @@ async function selectMachine(key) {
   renderMachines();
   renderCycles();
   setConnectedUI(false);
-  setStatus(`ready to activate (${machine?.name || "machine"})`);
+  setStatus(`Ready to connect to ${machine?.name || "machine"}`);
   setActivity("Ready", machine ? `${machine.name} selected` : "");
 }
 
@@ -465,7 +476,9 @@ function updateConnectLabel() {
   } else if (state === "error") {
     els.connect.innerHTML = '<span>Try again</span><span aria-hidden="true">→</span>';
   } else {
-    els.connect.innerHTML = machine ? `<span>Activate ${escapeHtml(machine.name)}</span><span aria-hidden="true">→</span>` : '<span>Activate machine</span><span aria-hidden="true">→</span>';
+    els.connect.innerHTML = machine
+      ? `<span>Connect to ${escapeHtml(machine.name)}</span><span aria-hidden="true">→</span>`
+      : '<span>Connect</span><span aria-hidden="true">→</span>';
   }
 }
 
@@ -563,7 +576,7 @@ async function connect() {
     if (isIOSDevice()) {
       showIOSNote({ request: true });
       setActivity("Ready", "");
-      setStatus(`ready to activate (${machine.name})`);
+      setStatus(`ready to connect (${machine.name})`);
     } else {
       setActivity("Bluetooth unavailable", "Open in a Bluetooth browser", "warn");
       setStatus("bluetooth unavailable", "warn");
@@ -657,6 +670,11 @@ async function startMachine(machine, cycleKey, label) {
     stage = "completed";
     context = { ...context, activation: completion.activation || context.activation, activatedAt: completion.activatedAt };
     saveClaim({ ...claim, used: true, activatedAt: completion.activatedAt || new Date().toISOString(), activation: completion.activation || context.activation });
+    window.CircuitWashAnalytics?.track("trial_activation_completed", {
+      source: "trial-flow",
+      auth_state: "anonymous",
+      trial_eligibility: "used"
+    });
     setStatus(`${machine.name} activated`, "ok");
     setActivity(`${machine.name} activated`, "", "ok");
     await disconnect("complete");
@@ -696,7 +714,7 @@ async function disconnect(reason = "manual") {
     setConnectedUI(false);
     updateConnectLabel();
     if (reason !== "complete") {
-      setStatus("ready to activate");
+      setStatus("ready to connect");
       if (reason !== "machine-changed") setActivity("Ready", "");
     }
   }
@@ -707,213 +725,32 @@ function onDisconnected() {
   resetMessages("Device disconnected");
   setConnectedUI(false);
   updateConnectLabel();
-  if (!completed) { setStatus("ready to activate"); setActivity("Ready", ""); }
+  if (!completed) { setStatus("ready to connect"); setActivity("Ready", ""); }
 }
 
 function openSiteModal() {
   if (completed) return;
   clearTimeout(searchTimer);
-  els.modal.classList.remove("is-search-focused");
-  els.modal.classList.remove("is-search-medium");
-  els.modal.classList.remove("has-search-query");
   els.modal.classList.remove("hidden");
   document.documentElement.classList.add("change-site-open");
   document.body.classList.add("change-site-open");
-  els.search.value = "";
-  els.results.innerHTML = "";
-  setSiteResultsVisible(false);
+  trialSiteSelector.reset();
   els.siteMessage.textContent = "";
-  const dialog = els.modal.querySelector(".change-site-dialog");
-  dialog?.style.removeProperty("height");
-  dialog?.style.removeProperty("max-height");
-  siteSearchStarted = false;
-  siteFullViewportHeight = Math.max(1, Math.round(window.visualViewport?.height || window.innerHeight));
-  siteCompactHeight = Math.round(dialog?.getBoundingClientRect().height || 0);
-  updateSiteViewport();
-  resetSiteResultsScroll();
+  setTimeout(() => els.search.focus(), 0);
 }
 
 function closeSiteModal() {
   clearTimeout(searchTimer);
   els.search.blur();
   els.modal.classList.add("hidden");
-  els.modal.classList.remove("is-search-focused");
-  els.modal.classList.remove("is-search-medium");
-  els.modal.classList.remove("has-search-query");
   document.documentElement.classList.remove("change-site-open");
   document.body.classList.remove("change-site-open");
-  els.search.value = "";
-  els.results.innerHTML = "";
-  setSiteResultsVisible(false);
+  trialSiteSelector.reset();
   els.siteMessage.textContent = "";
-  const dialog = els.modal.querySelector(".change-site-dialog");
-  dialog?.style.removeProperty("height");
-  dialog?.style.removeProperty("max-height");
-  siteCompactHeight = 0;
-  siteFullViewportHeight = 0;
-  siteSearchStarted = false;
-  resetSiteResultsScroll();
-}
-
-function resetSiteResultsScroll() {
-  els.results.scrollTop = 0;
-  cancelAnimationFrame(siteScrollResetFrame);
-  siteScrollResetFrame = requestAnimationFrame(() => {
-    siteScrollResetFrame = 0;
-    els.results.scrollTop = 0;
-  });
-}
-
-function updateSiteViewport() {
-  if (els.modal.classList.contains("hidden")) return;
-  const viewport = window.visualViewport;
-  const height = Math.max(1, Math.round(viewport?.height || window.innerHeight));
-  const offsetTop = Math.max(0, Math.round(viewport?.offsetTop || 0));
-  if (!siteFullViewportHeight || !siteSearchStarted || height > siteFullViewportHeight) {
-    siteFullViewportHeight = height;
-  }
-  els.modal.style.setProperty("--change-site-viewport-height", `${height}px`);
-  els.modal.style.setProperty("--change-site-viewport-top", `${offsetTop}px`);
-  syncSiteSearchState(height);
-  scheduleSiteSheetSize();
-}
-
-function syncSiteSearchState(viewportHeight) {
-  const wasKeyboardOpen = els.modal.classList.contains("is-search-focused");
-  const lostHeight = Math.max(0, siteFullViewportHeight - viewportHeight);
-  const openThreshold = Math.max(140, Math.round(siteFullViewportHeight * 0.16));
-  const closeThreshold = Math.max(80, Math.round(siteFullViewportHeight * 0.1));
-  const keyboardOpen = siteSearchStarted && lostHeight > (wasKeyboardOpen ? closeThreshold : openThreshold);
-  const hasSearchContent = Boolean(els.search.value.trim())
-    || (!els.results.classList.contains("hidden") && els.results.children.length > 0);
-  const medium = siteSearchStarted && !keyboardOpen && hasSearchContent;
-
-  els.modal.classList.toggle("is-search-focused", keyboardOpen);
-  els.modal.classList.toggle("is-search-medium", medium);
-}
-
-function expandSiteSearch() {
-  if (els.modal.classList.contains("hidden")) return;
-  const dialog = els.modal.querySelector(".change-site-dialog");
-  if (!siteSearchStarted) {
-    siteCompactHeight = Math.round(dialog?.getBoundingClientRect().height || 0);
-    siteFullViewportHeight = Math.max(
-      siteFullViewportHeight,
-      Math.round(window.visualViewport?.height || window.innerHeight)
-    );
-    if (dialog && siteCompactHeight) dialog.style.height = `${siteCompactHeight}px`;
-  }
-  siteSearchStarted = true;
-  resetSiteResultsScroll();
-  updateSiteViewport();
-}
-
-function scheduleSiteSheetSize() {
-  cancelAnimationFrame(siteResizeFrame);
-  siteResizeFrame = requestAnimationFrame(updateSiteSheetSize);
-}
-
-function updateSiteSheetSize() {
-  siteResizeFrame = 0;
-  const keyboardOpen = els.modal.classList.contains("is-search-focused");
-  const medium = els.modal.classList.contains("is-search-medium");
-  if (!keyboardOpen && !medium) return;
-  const dialog = els.modal.querySelector(".change-site-dialog");
-  const searchField = els.modal.querySelector(".change-site-search-field");
-  if (!dialog || !searchField) return;
-
-  const viewportHeight = Math.max(1, Math.round(window.visualViewport?.height || window.innerHeight));
-  const topGap = Math.min(28, Math.max(10, Math.round(viewportHeight * 0.04)));
-  const maxHeight = Math.max(120, viewportHeight - topGap);
-  const minimumHeight = Math.min(siteCompactHeight || dialog.getBoundingClientRect().height, maxHeight);
-  const resultsVisible = !els.results.classList.contains("hidden") && els.results.children.length > 0;
-
-  let desiredHeight = minimumHeight;
-  if (keyboardOpen && resultsVisible) {
-    desiredHeight = maxHeight;
-  } else if (medium && resultsVisible) {
-    const dialogRect = dialog.getBoundingClientRect();
-    const fieldRect = searchField.getBoundingClientRect();
-    const dialogStyle = getComputedStyle(dialog);
-    const resultsStyle = getComputedStyle(els.results);
-    const resultsMargin = parseFloat(resultsStyle.marginTop) || 0;
-    const paddingBottom = parseFloat(dialogStyle.paddingBottom) || 0;
-    const messageHeight = els.siteMessage.textContent.trim() ? els.siteMessage.getBoundingClientRect().height : 0;
-    const fixedHeight = Math.max(0, fieldRect.bottom - dialogRect.top) + resultsMargin + paddingBottom + messageHeight + 1;
-    const firstResult = els.results.querySelector(".change-site-result");
-    const resultHeight = firstResult?.getBoundingClientRect().height || 70;
-    const mediumResultsHeight = Math.min(els.results.scrollHeight, resultHeight * 3.6);
-    const mediumHeightLimit = Math.max(minimumHeight, Math.round(viewportHeight * 0.66));
-    desiredHeight = Math.min(mediumHeightLimit, Math.max(minimumHeight, Math.ceil(fixedHeight + mediumResultsHeight)));
-  }
-
-  dialog.style.maxHeight = `${maxHeight}px`;
-  dialog.style.height = `${Math.min(maxHeight, desiredHeight)}px`;
-}
-
-function setSiteResultsVisible(visible) {
-  els.results.classList.toggle("hidden", !visible);
-  els.search.setAttribute("aria-expanded", visible ? "true" : "false");
-  scheduleSiteSheetSize();
 }
 
 async function searchSites() {
-  const query = els.search.value.trim();
-  if (query.length < 2) {
-    setSiteResultsVisible(false);
-    resetSiteResultsScroll();
-    return;
-  }
-  els.results.innerHTML = '<div class="change-site-result-status loading"><span class="change-site-result-spinner" aria-hidden="true"></span><span>Finding laundry sites…</span></div>';
-  setSiteResultsVisible(true);
-  resetSiteResultsScroll();
-  try {
-    const response = await fetch(SITE_API, {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, mode: searchMode })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) throw new Error("Search failed");
-    renderSiteResults(data.sites || []);
-  } catch (_) {
-    els.results.innerHTML = '<div class="change-site-result-status"><span>Could not search laundry sites. Try again.</span></div>';
-    resetSiteResultsScroll();
-    scheduleSiteSheetSize();
-  }
-}
-
-function renderSiteResults(sites) {
-  els.results.innerHTML = "";
-  if (!sites.length) {
-    els.results.innerHTML = '<div class="change-site-result-status"><strong>No laundry sites found</strong><span>Check the spelling or try an address or postcode.</span></div>';
-    resetSiteResultsScroll();
-    scheduleSiteSheetSize();
-    return;
-  }
-  sites.forEach((site) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "change-site-result";
-    const title = document.createElement("strong");
-    title.textContent = site.name;
-    button.appendChild(title);
-    if (site.address) {
-      const address = document.createElement("span");
-      address.textContent = site.address;
-      button.appendChild(address);
-    }
-    const chevron = document.createElement("span");
-    chevron.className = "change-site-result-chevron";
-    chevron.setAttribute("aria-hidden", "true");
-    chevron.textContent = "›";
-    button.appendChild(chevron);
-    button.addEventListener("click", () => changeSite(site, button));
-    els.results.appendChild(button);
-  });
-  resetSiteResultsScroll();
-  scheduleSiteSheetSize();
+  return trialSiteSelector.search();
 }
 
 async function changeSite(site, button) {
@@ -1096,7 +933,7 @@ els.outcomeRetry.addEventListener("click", () => {
   renderMachines();
   renderCycles();
   setConnectedUI(false);
-  setStatus(`ready to activate (${selectedMachine()?.name || "machine"})`);
+  setStatus(`ready to connect (${selectedMachine()?.name || "machine"})`);
   setActivity("Ready", "", "");
 });
 els.closeMachinePicker.addEventListener("click", closeMachinePicker);
@@ -1104,23 +941,15 @@ els.machinePicker.addEventListener("click", (event) => { if (event.target.matche
 els.changeSite.addEventListener("click", openSiteModal);
 els.closeModal.addEventListener("click", closeSiteModal);
 els.modal.addEventListener("click", (event) => { if (event.target === els.modal) closeSiteModal(); });
-els.search.addEventListener("focus", expandSiteSearch);
-els.search.addEventListener("blur", () => requestAnimationFrame(updateSiteViewport));
 els.search.addEventListener("input", () => {
   clearTimeout(searchTimer);
   const query = els.search.value.trim();
-  els.modal.classList.toggle("has-search-query", Boolean(query));
-  resetSiteResultsScroll();
   if (query.length < 2) {
-    els.results.innerHTML = "";
-    setSiteResultsVisible(false);
+    trialSiteSelector.hide();
   }
-  updateSiteViewport();
   searchTimer = setTimeout(searchSites, 220);
 });
-window.visualViewport?.addEventListener("resize", updateSiteViewport);
-window.visualViewport?.addEventListener("scroll", updateSiteViewport);
-window.addEventListener("resize", updateSiteViewport);
+els.search.addEventListener("keydown", (event) => trialSiteSelector.handleKeydown(event));
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!els.machinePicker.classList.contains("hidden")) closeMachinePicker();

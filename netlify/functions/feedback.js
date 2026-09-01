@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const { Pool } = require("pg");
 const { getSiteById } = require("./_site-data");
+const { ensureOrderStorage } = require("./_order-storage");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -78,6 +79,8 @@ exports.handler = async (event) => {
 
 async function ensureSchema() {
   if (schemaReady) return;
+
+  await ensureOrderStorage(pool);
 
   await pool.query(`
     create table if not exists app_settings (
@@ -320,11 +323,11 @@ function isPromptRepeatCooldownOver(value) {
 }
 
 async function getOrderForCode(code) {
-  if (!(await tableExists("paypal_access_orders"))) return null;
+  if (!(await tableExists("access_orders"))) return null;
   const result = await pool.query(
     `
       select order_id, site_id, customer_email
-      from paypal_access_orders
+      from access_orders
       where status = 'COMPLETED' and access_code = $1
       order by coalesce(completed_at, created_at) desc, order_id desc
       limit 1
@@ -485,10 +488,10 @@ async function submitFeedback(body) {
 
     let accessCode = String(invitation.access_code || "").trim();
     if (!accessCode && invitation.order_id) {
-      const tableResult = await client.query(`select to_regclass('public.paypal_access_orders') as table_name`);
+      const tableResult = await client.query(`select to_regclass('public.access_orders') as table_name`);
       if (tableResult.rows[0]?.table_name) {
         const orderResult = await client.query(
-          `select access_code from paypal_access_orders where order_id = $1 limit 1`,
+          `select access_code from access_orders where order_id = $1 limit 1`,
           [invitation.order_id]
         );
         accessCode = String(orderResult.rows[0]?.access_code || "").trim();

@@ -77,8 +77,7 @@ const searchMode = "all";
 let selectedSite = null;
 let searchTimer = null;
 let searchRequestId = 0;
-let resultSites = [];
-let highlightedIndex = -1;
+let paySiteSelector = null;
 let checkoutConfig = null;
 let paymentBusy = false;
 let activePurchase = null;
@@ -612,6 +611,12 @@ function stripeAppearance() {
   };
 }
 
+function checkoutReturnUrl() {
+  const params = new URLSearchParams({ checkout: "return" });
+  if (checkoutParams.get("source") === "free-trial") params.set("source", "free-trial");
+  return `${location.origin}/pay.html?${params.toString()}`;
+}
+
 async function handleStripeFormSubmit(event) {
   event.preventDefault();
   await confirmStripePayment();
@@ -634,7 +639,7 @@ async function confirmStripePayment({ skipSubmit = false } = {}) {
         elements,
         clientSecret: intent.clientSecret,
         confirmParams: {
-          return_url: `${location.origin}/pay.html?checkout=return`
+          return_url: checkoutReturnUrl()
         },
         redirect: "if_required"
       });
@@ -662,7 +667,7 @@ async function confirmStripePayment({ skipSubmit = false } = {}) {
             email: getCustomerEmail()
           }
         },
-        return_url: `${location.origin}/pay.html?checkout=return`
+        return_url: checkoutReturnUrl()
       },
       redirect: "if_required"
     });
@@ -860,93 +865,19 @@ function clearSelectedSite() {
 }
 
 function hideResults() {
-  els.siteResults.classList.add("hidden");
-  els.siteSearch.setAttribute("aria-expanded", "false");
-  highlightedIndex = -1;
+  paySiteSelector?.hide();
 }
 
-function renderResults(sites, statusText = "") {
-  resultSites = Array.isArray(sites) ? sites : [];
-  highlightedIndex = -1;
-  els.siteResults.innerHTML = "";
-
-  if (statusText) {
-    const status = document.createElement("div");
-    status.className = "result-status";
-    status.textContent = statusText;
-    els.siteResults.appendChild(status);
-  } else {
-    resultSites.forEach((site, index) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "result-button";
-      button.setAttribute("role", "option");
-      button.dataset.index = String(index);
-
-      const name = document.createElement("span");
-      name.className = "result-name";
-      name.textContent = site.name;
-      button.appendChild(name);
-
-      const formattedAddress = formatSiteAddress(site.address);
-      if (formattedAddress) {
-        const address = document.createElement("span");
-        address.className = "result-address";
-        address.textContent = formattedAddress;
-        button.appendChild(address);
-      }
-
-      const chevron = document.createElement("span");
-      chevron.className = "result-chevron";
-      chevron.setAttribute("aria-hidden", "true");
-      chevron.textContent = "›";
-      button.appendChild(chevron);
-
-      button.addEventListener("click", () => selectSite(site));
-      els.siteResults.appendChild(button);
-    });
-  }
-
-  els.siteResults.classList.remove("hidden");
-  els.siteSearch.setAttribute("aria-expanded", "true");
+function renderResults(sites, statusText = String()) {
+  paySiteSelector?.render(sites, statusText);
 }
 
 function updateHighlight() {
-  const buttons = [...els.siteResults.querySelectorAll(".result-button")];
-  buttons.forEach((button, index) => {
-    const highlighted = index === highlightedIndex;
-    button.classList.toggle("highlighted", highlighted);
-    button.setAttribute("aria-selected", String(highlighted));
-    if (highlighted) button.scrollIntoView({ block: "nearest" });
-  });
+  paySiteSelector?.updateHighlight();
 }
 
 async function searchSites() {
-  const query = String(els.siteSearch.value || "").trim();
-  const requestId = ++searchRequestId;
-
-  if (query.length < 2) {
-    hideResults();
-    return;
-  }
-
-  els.searchSpinner.classList.remove("hidden");
-
-  try {
-    const data = await requestJson("/.netlify/functions/public-sites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, mode: "all" })
-    });
-
-    if (requestId !== searchRequestId) return;
-    const sites = Array.isArray(data.sites) ? data.sites : [];
-    renderResults(sites, sites.length ? "" : "No matching sites");
-  } catch (_) {
-    if (requestId === searchRequestId) renderResults([], "Could not search sites");
-  } finally {
-    if (requestId === searchRequestId) els.searchSpinner.classList.add("hidden");
-  }
+  return paySiteSelector?.search();
 }
 
 async function loadCheckoutConfig() {
@@ -1071,6 +1002,13 @@ function showSuccess(result, { restored = false } = {}) {
   if (els.heroSubtext) els.heroSubtext.textContent = "Copy your code or continue straight to the machine controls.";
   els.accessCode.textContent = purchase.code || "";
   const freeTrial = purchaseIsFreeTrial(purchase);
+  if (checkoutParams.get("source") === "free-trial" && !freeTrial) {
+    window.CircuitWashAnalytics?.track("trial_converted_to_paid", {
+      source: "trial-completion-offer",
+      auth_state: "authenticated",
+      trial_eligibility: "used"
+    }, { once: `trial_converted_to_paid:${purchase.orderId || "purchase"}` });
+  }
   if (els.accessCodeLabel) {
     els.accessCodeLabel.textContent = freeTrial ? "Your free trial code" : "Your 1-year access code";
   }
@@ -1154,27 +1092,21 @@ async function requestJson(url, options = {}) {
   return data;
 }
 
+paySiteSelector = window.CircuitWashSiteSelector.create({
+  input: els.siteSearch,
+  results: els.siteResults,
+  spinner: els.searchSpinner,
+  formatAddress: formatSiteAddress,
+  onSelect: (site) => selectSite(site)
+});
+
 els.siteSearch.addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(searchSites, 220);
 });
 
 els.siteSearch.addEventListener("keydown", (event) => {
-  if (els.siteResults.classList.contains("hidden")) return;
-  if (event.key === "ArrowDown") {
-    event.preventDefault();
-    highlightedIndex = Math.min(highlightedIndex + 1, resultSites.length - 1);
-    updateHighlight();
-  } else if (event.key === "ArrowUp") {
-    event.preventDefault();
-    highlightedIndex = Math.max(highlightedIndex - 1, 0);
-    updateHighlight();
-  } else if (event.key === "Enter" && highlightedIndex >= 0) {
-    event.preventDefault();
-    selectSite(resultSites[highlightedIndex]);
-  } else if (event.key === "Escape") {
-    hideResults();
-  }
+  paySiteSelector.handleKeydown(event);
 });
 
 els.customerEmail.addEventListener("input", () => {

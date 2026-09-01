@@ -2,7 +2,6 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { Pool } = require("pg");
-const { ensureStoreSchema } = require("./_store-db");
 
 const pool = new Pool({
   connectionString:
@@ -370,7 +369,7 @@ async function ensureUsageSchema() {
       order_id text primary key,
       stripe_session_id text unique,
       access_code text not null references access_codes(code) on delete cascade,
-      bonus_activations integer not null default 2,
+      bonus_activations integer not null default 3,
       amount numeric(10, 2) not null default 10,
       currency varchar(3) not null default 'GBP',
       status text not null default 'CREATED',
@@ -379,6 +378,7 @@ async function ensureUsageSchema() {
       completed_at timestamptz
     )
   `);
+  await pool.query(`alter table activation_upgrade_orders alter column bonus_activations set default 3`);
   await pool.query(`create index if not exists activation_upgrade_code_week_idx on activation_upgrade_orders(access_code, week_start, status)`);
   usageSchemaReady = true;
 }
@@ -516,30 +516,6 @@ async function addAccessCode(code, siteId) {
   `;
   const { rows } = await pool.query(query, [code, siteId]);
   return Boolean(rows[0]);
-}
-
-async function getStoreAccess(laundryAccessCode) {
-  try {
-    await ensureStoreSchema(pool);
-    const result = await pool.query(`
-      select access_code, popup_enabled, popup_claimed_at
-      from store_members
-      where laundry_access_code = $1
-        and active = true
-      limit 1
-    `, [laundryAccessCode]);
-    const storeCode = result.rows[0]?.access_code;
-    if (!storeCode) return { storeAccess: null, storeInvite: null };
-    const storeAccess = {
-      code: storeCode,
-      url: `/store.html?code=${encodeURIComponent(storeCode)}`
-    };
-    const showPopup = Boolean(result.rows[0]?.popup_enabled) && !result.rows[0]?.popup_claimed_at;
-    return { storeAccess, storeInvite: showPopup ? storeAccess : null };
-  } catch (error) {
-    console.warn("[login] store access lookup failed:", error?.message || error);
-    return { storeAccess: null, storeInvite: null };
-  }
 }
 
 exports.handler = async (event) => {
@@ -729,11 +705,10 @@ exports.handler = async (event) => {
       return json({ ok: false, error: "site_not_configured" }, 500);
     }
 
-    const { storeAccess, storeInvite } = await getStoreAccess(code);
-
     return json(
       {
         ok: true,
+        siteId: mapping.site_id,
         siteName: String(entry.siteName || "Site"),
         machines: sanitizeMachines(entry.machines),
         expiresAt: mapping.expires_at || null,
@@ -745,9 +720,7 @@ exports.handler = async (event) => {
         weeklyResetAt: usage.resetAt,
         totalUsed: usage.totalUsed,
         totalLimit: usage.totalLimit,
-        deleteAfterUse,
-        storeAccess,
-        storeInvite
+        deleteAfterUse
       },
       200
     );

@@ -9,6 +9,7 @@
   <title>Review and pay | CircuitWash</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="assets/pay.css" />
+  <link rel="stylesheet" href="assets/site-selector.css?v=change-site-overlay-1" />
   <link rel="stylesheet" href="assets/payment-sheet.css" />
   <script src="https://js.stripe.com/v3/"></script>
 </head>
@@ -39,7 +40,7 @@
       <div id="stepCode" class="step"><span class="step-number">3</span><span class="step-label">Get code</span></div>
     </div>
 
-    <section id="purchaseCard" class="card site-stage" aria-labelledby="purchaseHeading">
+    <section id="purchaseCard" class="card site-stage shared-site-selector" aria-labelledby="purchaseHeading">
       <div id="checkoutView">
         <div class="section">
           <div class="section-title-row">
@@ -187,7 +188,7 @@
       </div>
     </section>
 
-    <p class="support-note">Need help? <a href="mailto:support@circuitwash.com">Contact support</a></p>
+    <p class="support-note">Need help? <a href="/support.html?source=%2Fpay.html">Contact support</a></p>
   </main>
 
   <div id="paymentMethods" class="payment-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="paymentSheetTitle">
@@ -244,6 +245,8 @@
     </div>
   </div>
 
+  <script src="assets/funnel-analytics.js"></script>
+  <script src="assets/site-selector.js?v=change-site-overlay-1"></script>
   <script src="assets/pay.js?v=address-format-20260817"></script>
 </body>
 </html>

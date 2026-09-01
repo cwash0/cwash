@@ -13,6 +13,12 @@
   text-transform: uppercase;
 }
 
+.trial-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .trial-page-state {
   display: grid;
   justify-items: center;
@@ -212,8 +218,6 @@
   border-color: rgba(72, 227, 168, .24);
   background: linear-gradient(150deg, rgba(11, 42, 38, .52), rgba(6, 18, 28, .96) 68%);
 }
-
-#trialControls .connection-panel[data-state="error"] .connection-help-link { display: inline-flex; }
 
 @media (max-width: 560px) {
   .trial-pill { white-space: nowrap; }

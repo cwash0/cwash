@@ -198,6 +198,11 @@ async function claimTrial() {
     try {
       localStorage.setItem(TRIAL_CLAIM_KEY, JSON.stringify(claim));
     } catch (_) {}
+    window.CircuitWashAnalytics?.track("trial_started", {
+      source: new URLSearchParams(location.search).get("source") || "trial-site-selected",
+      auth_state: "anonymous",
+      trial_eligibility: "claimed"
+    }, { once: "trial_started" });
     location.assign(`${result.activationUrl || "/trial-activate.html"}#trial=${encodeURIComponent(result.trialToken)}`);
   } catch (error) {
     if (error.code === "trial_already_claimed") {

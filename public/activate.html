@@ -6,7 +6,8 @@
   <meta name="theme-color" content="#050b14" />
   <title>Start your wash | CircuitWash</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/activate.css?v=machine-panel-compact-3" />
+  <link rel="stylesheet" href="assets/activate.css?v=support-menu-1" />
+  <link rel="stylesheet" href="assets/site-selector.css?v=change-site-overlay-1" />
   <link rel="stylesheet" href="assets/payment-sheet.css" />
   <link rel="stylesheet" href="assets/feedback-prompt.css" />
 </head>
@@ -44,13 +45,12 @@
         </div>
 
         <div class="pin-no-code">
-          <span>Don&rsquo;t have a code?</span>
+          <span>Need access?</span>
           <div class="pin-access-links">
-            <a class="pin-buy-link" href="/pay.html">Buy one <span aria-hidden="true">&rarr;</span></a>
-            <a id="freeActivationLink" class="pin-free-link hidden" href="/trial.html"><span id="freeActivationLabel">Try one activation free</span><span aria-hidden="true">&rarr;</span></a>
+            <a class="pin-buy-link" href="/pay.html">Buy an access code <span aria-hidden="true">&rarr;</span></a>
+            <a id="freeActivationLink" class="pin-free-link hidden" href="/trial.html"><span id="freeActivationLabel">New to CircuitWash? Try your first wash free</span><span aria-hidden="true">&rarr;</span></a>
           </div>
         </div>
-        <p class="pin-support">Need help? <a href="mailto:support@circuitwash.com">Contact support</a></p>
       </div>
     </div>
   </div>
@@ -75,26 +75,6 @@
     <span class="bluefy-copy-toast-text"><strong>Link copied</strong><small>Opening App Store&hellip;</small></span>
   </div>
 
-  <div id="storeInviteOverlay" class="store-invite-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="storeInviteTitle">
-    <div class="store-invite-modal">
-      <div class="store-invite-kicker">Secret store</div>
-      <h2 id="storeInviteTitle">You've been invited to the secret store.</h2>
-      <p>Press the icon to open it.</p>
-      <div class="store-invite-code"><span>Store access code</span><strong id="storeInviteCode"></strong></div>
-      <div class="store-invite-actions">
-        <button id="closeStoreInviteBtn" class="store-invite-later" type="button">Not now</button>
-        <a id="openStoreInviteLink" class="store-invite-open" href="/store.html" aria-label="Open secret store">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
-            <path d="M3 6h18"></path>
-            <path d="M16 10a4 4 0 0 1-8 0"></path>
-          </svg>
-          <span>Open store</span>
-        </a>
-      </div>
-    </div>
-  </div>
-
   <div id="appRoot" class="locked">
     <main class="app-shell">
       <header class="app-header">
@@ -107,10 +87,7 @@
         <details class="account-menu">
           <summary aria-label="Open account menu"><span aria-hidden="true">&bull;&bull;&bull;</span></summary>
           <div class="account-menu-panel">
-            <a id="storeNavLink" class="account-menu-item hidden" href="/store.html">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><path d="M3 6h18"></path><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
-              CircuitWash Store
-            </a>
+            <a class="account-menu-item" href="/support.html?source=%2Factivate.html">Contact support</a>
             <button id="logoutBtn" class="account-menu-item" type="button">Log out</button>
           </div>
         </details>
@@ -150,7 +127,7 @@
               </button>
               <div id="upgradePanelBody" class="upgrade-panel-body" aria-hidden="true">
                 <div class="upgrade-copy">
-                  <strong id="upgradeTitle">Add 2 extra activations</strong>
+                  <strong id="upgradeTitle">Add 3 extra activations</strong>
                   <span id="upgradeText">Get 2 more machine starts for this week.</span>
                 </div>
                 <button id="upgradeBtn" class="upgrade-button" type="button">
@@ -159,7 +136,6 @@
                 <span id="upgradeMessage" class="upgrade-message"></span>
               </div>
             </section>
-            <a class="connection-help-link" href="mailto:support@circuitwash.com?subject=CircuitWash%20connection%20help">Having trouble connecting? Get help</a>
           </div>
         </article>
 
@@ -192,28 +168,44 @@
   </div>
 
   <div id="changeSiteOverlay" class="change-site-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="changeSiteTitle">
-    <div class="change-site-dialog">
-      <div class="change-site-head">
-        <div class="change-site-title">
-          <h2 id="changeSiteTitle">Change site</h2>
-        </div>
-        <button id="closeChangeSiteBtn" type="button">Cancel</button>
-      </div>
-      <p>Choose the site where you are using the machine.</p>
-      <div class="change-site-search-experience">
-        <div class="change-site-search-field">
+    <section class="change-site-dialog shared-site-selector">
+      <header class="change-site-head">
+        <button id="closeChangeSiteBtn" type="button" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg></button>
+        <h2 id="changeSiteTitle">Change site</h2>
+      </header>
+      <div class="change-site-body">
+        <div class="search-wrap">
           <label class="visually-hidden" for="changeSiteSearch">Search for your laundry site</label>
-          <span class="change-site-search-icon" aria-hidden="true"></span>
-          <input id="changeSiteSearch" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search site, address or postcode" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="changeSiteResults" />
+          <span class="site-search-icon" aria-hidden="true"></span>
+          <input id="changeSiteSearch" class="search-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search site, address or postcode" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="changeSiteResults" />
+          <span id="changeSiteSearchSpinner" class="search-spinner hidden" aria-hidden="true"></span>
+          <div id="changeSiteResults" class="results hidden" role="listbox" aria-label="Matching laundry sites"></div>
         </div>
-        <div id="changeSiteResults" class="change-site-results hidden" role="listbox" aria-label="Matching laundry sites"></div>
+        <p class="site-switch-note"><span aria-hidden="true">↔</span>You can change your laundry site at any time.</p>
+        <details class="site-help">
+          <summary>Don&apos;t know your site name?</summary>
+          <div class="site-guide">
+            <h3>Check the on site terminal</h3>
+            <div class="site-guide-body">
+              <div class="site-guide-visual">
+                <img class="terminal-device" src="/assets/terminal-guide.png?v=20260817" alt="Payment terminal showing the site name at the top of its screen" />
+                <span class="site-name-highlight" aria-hidden="true"></span>
+              </div>
+              <div class="site-guide-copy">
+                <p>Example: Park Road 117</p>
+              </div>
+            </div>
+          </div>
+        </details>
+        <div id="changeSiteMessage" class="change-site-message" aria-live="polite"></div>
       </div>
-      <div id="changeSiteMessage" class="change-site-message" aria-live="polite"></div>
-    </div>
+    </section>
   </div>
 
   <script src="https://js.stripe.com/v3/"></script>
   <script src="assets/feedback-prompt.js"></script>
+  <script src="assets/funnel-analytics.js"></script>
+  <script src="assets/site-selector.js?v=change-site-overlay-1"></script>
   <script src="assets/activate.js"></script>
 </body>
 </html>

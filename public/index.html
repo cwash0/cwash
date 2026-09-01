@@ -5,14 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#050b14" />
   <meta name="color-scheme" content="dark" />
-  <meta name="description" content="Start compatible laundry machines in seconds with CircuitWash. A simpler, lower-cost way to pay for laundry." />
-  <title>CircuitWash | Start your wash</title>
+  <meta name="description" content="Try your first compatible laundry-machine activation free with CircuitWash, then keep saving on every wash." />
+  <title>CircuitWash | Try your first wash free</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/landing.css?v=cta-render-1" />
+  <link rel="stylesheet" href="assets/landing.css?v=precision-ui-3" />
   <script>
     (() => {
       try {
         const claim = JSON.parse(localStorage.getItem("zaftFreeTrialClaim") || "null");
+        const accessCode = String(localStorage.getItem("laundryActivateAccessCode") || "").trim();
+        document.documentElement.dataset.authState = accessCode ? "authenticated" : "anonymous";
         if (claim?.used || claim?.activatedAt) document.documentElement.dataset.trialLocalState = "activated";
       } catch (_) {}
     })();
@@ -26,29 +28,24 @@
       <span>Circuit<span>Wash</span></span>
     </a>
     <nav class="header-actions" aria-label="Quick actions">
-      <a class="text-link" href="mailto:support@circuitwash.com">Support</a>
-      <a class="button button-small button-primary" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
+      <a class="button button-small button-quiet header-code-button" data-access-code-entry data-source="header" href="/activate.html"><span data-header-access-label>Have a code?</span></a>
     </nav>
   </header>
 
   <main id="main">
     <section class="hero section-shell" aria-labelledby="hero-title">
-      <div class="hero-glow" aria-hidden="true"></div>
-      <div class="hero-orbit" aria-hidden="true">
-        <span class="orbit-ring orbit-ring-one"></span>
-        <span class="orbit-ring orbit-ring-two"></span>
-        <span class="orbit-ring orbit-ring-three"></span>
-        <span class="orbit-light orbit-light-one"></span>
-        <span class="orbit-light orbit-light-two"></span>
-      </div>
       <div class="hero-copy">
         <div class="pill"><span aria-hidden="true">&#10022;</span> Save on every wash</div>
         <h1 id="hero-title">Stop overpaying<br />for <span>laundry.</span></h1>
         <p>Activate compatible machines in seconds and keep more of your money.</p>
         <div class="hero-actions">
-          <a class="button button-primary button-large primary-activation-cta" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
-          <a class="button button-secondary button-free button-large trial-entry is-loading" data-trial-entry href="/trial.html" aria-busy="true" aria-disabled="true">Try one activation free</a>
+          <a class="button button-primary button-large primary-state-cta trial-entry is-loading" data-primary-action data-trial-entry data-source="hero" href="/trial.html" tabindex="-1" aria-busy="true" aria-disabled="true">
+            <span class="button-label">Try your first wash free</span>
+            <span class="button-spinner" aria-hidden="true"></span>
+            <span class="button-arrow" aria-hidden="true">&rarr;</span>
+          </a>
         </div>
+        <p id="trialStatus" class="trial-status hidden" role="status" aria-live="polite"><span></span><button id="retryTrialStatus" class="trial-retry hidden" type="button">Try again</button></p>
         <ul class="trust-row" aria-label="CircuitWash benefits">
           <li><span aria-hidden="true">&#10003;</span> No subscription</li>
           <li><span aria-hidden="true">&#10003;</span> Fast activation</li>
@@ -58,18 +55,12 @@
     </section>
 
     <section class="quick-section section-shell" aria-labelledby="quick-title">
-      <div class="section-label"><span>Get started</span><h2 id="quick-title">What do you need?</h2></div>
+      <div class="section-label"><span>Returning to CircuitWash?</span><h2 id="quick-title">Access your wash</h2></div>
       <div class="quick-grid">
-        <a class="quick-card quick-primary" href="/activate.html">
+        <a class="quick-card" data-access-code-entry href="/activate.html">
           <span class="quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2v9M7.1 4.9a8 8 0 1 0 9.8 0" /></svg></span>
           <span class="quick-copy"><small>Already have a code?</small><strong>Activate a machine</strong></span>
           <span class="quick-arrow" aria-hidden="true">&rarr;</span>
-        </a>
-
-        <a id="freeTrialCard" class="quick-card quick-free trial-entry is-loading" data-trial-entry href="/trial.html" aria-busy="true" aria-disabled="true">
-          <span class="quick-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.5 5.5l13 13M18.5 5.5l-13 13" /></svg></span>
-          <span class="quick-copy"><small>New here? First activation free</small><strong>Try CircuitWash free</strong></span>
-          <span class="card-cta"><span class="quick-arrow" aria-hidden="true">&rarr;</span></span>
         </a>
 
         <a class="quick-card" href="/pay.html">
@@ -147,8 +138,8 @@
         <h2 id="final-title">Ready to wash?</h2>
       </div>
       <div class="final-actions">
-        <a class="button button-primary primary-activation-cta" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
-        <a class="button button-secondary button-free trial-entry is-loading" data-trial-entry href="/trial.html" aria-busy="true" aria-disabled="true">Try one activation free</a>
+        <a class="button button-primary primary-state-cta trial-entry is-loading" data-primary-action data-trial-entry data-source="final" href="/trial.html" tabindex="-1" aria-busy="true" aria-disabled="true"><span class="button-label">Try your first wash free</span><span class="button-spinner" aria-hidden="true"></span><span class="button-arrow" aria-hidden="true">&rarr;</span></a>
+        <a class="quiet-inline-link" data-access-code-entry href="/activate.html">Already have a code? Enter it <span aria-hidden="true">&rarr;</span></a>
       </div>
     </section>
   </main>
@@ -156,18 +147,19 @@
   <footer class="site-footer section-shell">
     <a class="brand footer-brand" href="/" aria-label="CircuitWash home"><span class="brand-mark" aria-hidden="true"><span></span></span><span>Circuit<span>Wash</span></span></a>
     <nav aria-label="Footer links">
-      <a href="mailto:support@circuitwash.com">Support</a>
+      <a href="/support.html?source=%2F">Support</a>
       <a href="#how-it-works">FAQ</a>
-      <a href="mailto:support@circuitwash.com?subject=CircuitWash%20terms" aria-label="Request CircuitWash terms">Terms</a>
-      <a href="mailto:support@circuitwash.com?subject=CircuitWash%20privacy" aria-label="Ask about CircuitWash privacy">Privacy</a>
+      <a href="/support.html?source=%2F&amp;topic=terms" aria-label="Request CircuitWash terms">Terms</a>
+      <a href="/support.html?source=%2F&amp;topic=privacy" aria-label="Ask about CircuitWash privacy">Privacy</a>
     </nav>
     <p>&copy; <span id="currentYear"></span> CircuitWash. Independent laundry access.</p>
   </footer>
 
   <div class="mobile-sticky" id="mobileSticky" aria-hidden="true">
-    <a class="button button-primary" href="/activate.html">Start a wash <span aria-hidden="true">&rarr;</span></a>
+    <a class="button button-primary primary-state-cta trial-entry is-loading" data-primary-action data-trial-entry data-source="mobile-sticky" href="/trial.html" tabindex="-1" aria-busy="true" aria-disabled="true"><span class="button-label">Try your first wash free</span><span class="button-spinner" aria-hidden="true"></span><span class="button-arrow" aria-hidden="true">&rarr;</span></a>
   </div>
 
+  <script src="assets/funnel-analytics.js"></script>
   <script src="assets/landing.js"></script>
 </body>
 </html>

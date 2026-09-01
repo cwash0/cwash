@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { Pool } = require("pg");
+const { ensureSupportSchema } = require("./_support-schema");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -103,9 +104,9 @@ exports.handler = async (event) => {
           resend_email_id, message_id, message_id_normalized,
           in_reply_to, references_header,
           from_name, from_email, to_addresses, subject, body_text,
-          attachments, status, received_at, last_activity_at
+          attachments, status, source, received_at, last_activity_at
         )
-        values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11::jsonb,'OPEN',$12::timestamptz,$12::timestamptz)
+        values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11::jsonb,'NEW','EMAIL',$12::timestamptz,$12::timestamptz)
         on conflict (resend_email_id) do update set
           subject = excluded.subject,
           body_text = excluded.body_text,
@@ -184,70 +185,7 @@ async function fetchReceivedEmail(emailId) {
 }
 
 async function ensureSupportTables() {
-  await pool.query(`
-    create table if not exists support_tickets (
-      id bigserial primary key,
-      resend_email_id text unique not null,
-      message_id text,
-      message_id_normalized text,
-      in_reply_to text,
-      references_header text,
-      from_name text,
-      from_email text not null,
-      to_addresses jsonb not null default '[]'::jsonb,
-      subject text not null default 'No subject',
-      body_text text not null default '',
-      attachments jsonb not null default '[]'::jsonb,
-      status text not null default 'OPEN',
-      is_read boolean not null default false,
-      received_at timestamptz not null default now(),
-      last_activity_at timestamptz not null default now(),
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
-    )
-  `);
-  await pool.query(`
-    alter table support_tickets
-      add column if not exists is_read boolean not null default false,
-      add column if not exists message_id_normalized text
-  `);
-  await pool.query(`
-    create table if not exists support_replies (
-      id bigserial primary key,
-      ticket_id bigint not null references support_tickets(id) on delete cascade,
-      direction text not null default 'OUTBOUND',
-      from_email text,
-      resend_email_id text,
-      received_email_id text unique,
-      message_id text,
-      message_id_normalized text,
-      body_text text not null,
-      sent_at timestamptz not null default now()
-    )
-  `);
-  await pool.query(`
-    alter table support_replies
-      add column if not exists direction text not null default 'OUTBOUND',
-      add column if not exists from_email text,
-      add column if not exists received_email_id text,
-      add column if not exists message_id text,
-      add column if not exists message_id_normalized text
-  `);
-  await pool.query(`
-    update support_tickets
-    set message_id_normalized = lower(regexp_replace(message_id, '[<>[:space:]]', '', 'g'))
-    where message_id is not null and coalesce(message_id_normalized, '') = ''
-  `);
-  await pool.query(`
-    update support_replies
-    set message_id_normalized = lower(regexp_replace(message_id, '[<>[:space:]]', '', 'g'))
-    where message_id is not null and coalesce(message_id_normalized, '') = ''
-  `);
-  await pool.query(`create unique index if not exists support_replies_received_email_idx on support_replies(received_email_id) where received_email_id is not null`);
-  await pool.query(`create index if not exists support_tickets_activity_idx on support_tickets(last_activity_at desc)`);
-  await pool.query(`create index if not exists support_replies_ticket_idx on support_replies(ticket_id, sent_at)`);
-  await pool.query(`create index if not exists support_tickets_message_id_idx on support_tickets(message_id_normalized) where message_id_normalized is not null`);
-  await pool.query(`create index if not exists support_replies_message_id_idx on support_replies(message_id_normalized) where message_id_normalized is not null`);
+  await ensureSupportSchema(pool);
 }
 
 function getEmailHeader(headers, name) {
@@ -279,7 +217,7 @@ function extractMessageIds(value) {
 }
 
 function extractTicketId(subject) {
-  const match = String(subject || "").match(/\[LS-(\d+)\]/i);
+  const match = String(subject || "").match(/\[(?:CW|LS)-(\d+)\]/i);
   const id = match ? Number.parseInt(match[1], 10) : 0;
   return Number.isInteger(id) && id > 0 ? id : 0;
 }
