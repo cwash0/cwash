@@ -1,4 +1,14 @@
 (function exposeSiteSelector() {
+  function formatAddress(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .replace(/[\u060C\uFE50\uFF0C]/g, ",")
+      .split(",")
+      .map((part) => part.replace(/^[\s,]+|[\s,]+$/g, "").replace(/\s+/g, " "))
+      .filter(Boolean)
+      .join(", ");
+  }
+
   function create(options = {}) {
     const input = options.input;
     const results = options.results;
@@ -49,7 +59,7 @@
           name.textContent = String(site.name || "Site");
           button.appendChild(name);
 
-          const addressText = options.formatAddress ? options.formatAddress(site.address) : String(site.address || "").trim();
+          const addressText = (options.formatAddress || formatAddress)(site.address);
           if (addressText) {
             const address = document.createElement("span");
             address.className = "result-address";
@@ -134,5 +144,5 @@
     return Object.freeze({ hide, reset, render, search, handleKeydown, updateHighlight });
   }
 
-  window.CircuitWashSiteSelector = Object.freeze({ create });
+  window.CircuitWashSiteSelector = Object.freeze({ create, formatAddress });
 })();

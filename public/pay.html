@@ -8,9 +8,9 @@
   <meta name="description" content="Buy CircuitWash site access and receive your access code by email." />
   <title>Review and pay | CircuitWash</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/pay.css" />
-  <link rel="stylesheet" href="assets/site-selector.css?v=change-site-overlay-1" />
-  <link rel="stylesheet" href="assets/payment-sheet.css" />
+  <link rel="stylesheet" href="assets/pay.css?v=review-pay-3" />
+  <link rel="stylesheet" href="assets/site-selector.css?v=shared-selector-2" />
+  <link rel="stylesheet" href="assets/payment-sheet.css?v=payment-methods-2" />
   <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
@@ -30,8 +30,8 @@
   <main id="checkoutMain" class="page">
     <header class="hero">
       <div id="heroEyebrow" class="eyebrow">Buy access</div>
-      <h1 id="heroTitle">Choose your site</h1>
-      <p id="heroSubtext">Find your laundry room to get started.</p>
+      <h1 id="heroTitle">Where are you washing?</h1>
+      <p id="heroSubtext">Let&rsquo;s find your laundry room.</p>
     </header>
 
     <div class="steps" aria-label="Checkout progress">
@@ -44,7 +44,7 @@
       <div id="checkoutView">
         <div class="section">
           <div class="section-title-row">
-            <h2 id="purchaseHeading">Choose your site</h2>
+            <h2 id="purchaseHeading">Where are you washing?</h2>
           </div>
 
           <div id="siteSearchWrap" class="search-wrap">
@@ -65,18 +65,27 @@
             <span id="searchSpinner" class="search-spinner hidden" aria-hidden="true"></span>
             <div id="siteResults" class="results hidden" role="listbox"></div>
           </div>
-          <p class="site-switch-note"><span aria-hidden="true">↔</span>You can change your laundry site at any time.</p>
           <details id="siteHelp" class="site-help">
-            <summary>Don&apos;t know your site name?</summary>
+            <summary>
+              <span class="site-help-label">
+                <svg class="site-help-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <path d="M9.8 9a2.35 2.35 0 1 1 3.57 2c-.83.5-1.37.94-1.37 2"></path>
+                  <path d="M12 16.8h.01"></path>
+                </svg>
+                <span>Not sure what your site is called?</span>
+              </span>
+            </summary>
             <div class="site-guide">
-              <h3>Check the on site terminal</h3>
+              <h3>Look for this payment terminal</h3>
+              <p class="site-guide-description">Your site name is shown at the top of the screen.</p>
               <div class="site-guide-body">
                 <div class="site-guide-visual">
                   <img class="terminal-device" src="/assets/terminal-guide.png?v=20260817" alt="Payment terminal showing the site name at the top of its screen" />
                   <span class="site-name-highlight" aria-hidden="true"></span>
                 </div>
                 <div class="site-guide-copy">
-                  <p>Example: Park Road 117</p>
+                  <p>Example: <strong>Park Road 117</strong></p>
                 </div>
               </div>
             </div>
@@ -124,7 +133,7 @@
           </div>
 
           <details id="promoDetails" class="promo-field">
-            <summary>Have a promo code?</summary>
+            <summary>Promo code</summary>
             <div class="promo-panel">
               <label for="promoCodeInput">Promo code</label>
               <div class="promo-row">
@@ -152,18 +161,11 @@
               <span class="payment-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 9h18M7 15h3"/></svg>
               </span>
-              <div>
-                <h2 id="paymentHeading" class="payment-heading">Payment</h2>
-                <p>Secure card and wallet checkout</p>
-              </div>
+              <h2 id="paymentHeading" class="payment-heading">Payment</h2>
             </div>
             <button id="freeCheckoutBtn" class="free-checkout-button hidden" type="button">Get free access code</button>
             <button id="checkoutButton" class="checkout-button" type="button" disabled>Continue to secure checkout <span aria-hidden="true">&rarr;</span></button>
-            <ul class="checkout-trust" aria-label="Purchase reassurance">
-              <li><span aria-hidden="true">&#10003;</span> Secure checkout</li>
-              <li><span aria-hidden="true">&#10003;</span> One-time payment</li>
-              <li><span aria-hidden="true">&#10003;</span> No renewal</li>
-            </ul>
+            <p class="checkout-trust" aria-label="Secure, one-time payment, no renewal"><span aria-hidden="true">&#10003;</span> Secure &middot; One-time payment &middot; No renewal</p>
             <div id="paymentMessage" class="message" aria-live="polite"></div>
           </div>
         </div>
@@ -188,7 +190,7 @@
       </div>
     </section>
 
-    <p class="support-note">Need help? <a href="/support.html?source=%2Fpay.html">Contact support</a></p>
+    <p class="support-note">Need a hand? <a href="/support.html?source=%2Fpay.html">Contact support</a></p>
   </main>
 
   <div id="paymentMethods" class="payment-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="paymentSheetTitle">
@@ -246,7 +248,7 @@
   </div>
 
   <script src="assets/funnel-analytics.js"></script>
-  <script src="assets/site-selector.js?v=change-site-overlay-1"></script>
-  <script src="assets/pay.js?v=address-format-20260817"></script>
+  <script src="assets/site-selector.js?v=site-results-2"></script>
+  <script src="assets/pay.js?v=review-pay-2"></script>
 </body>
 </html>

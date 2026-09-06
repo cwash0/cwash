@@ -378,7 +378,7 @@ async function getTrialSiteLimits(db = pool) {
 
 function normalizeTrialLimit(value) {
   const limit = Number.parseInt(String(value ?? ""), 10);
-  return Number.isInteger(limit) && limit > 0 ? limit : null;
+  return Number.isInteger(limit) && limit >= 0 ? limit : null;
 }
 
 async function trialSiteLimitStatus(db, siteId, excludeClaimId = null) {
@@ -388,18 +388,18 @@ async function trialSiteLimitStatus(db, siteId, excludeClaimId = null) {
     select count(*)::int as used
     from free_trial_claims
     where site_id = $1
-      and activated_at is not null
-      and activated_at >= date_trunc('week', now())
+      and created_at >= date_trunc('week', now())
       and ($2::bigint is null or id <> $2::bigint)
   `, [siteId, excludeClaimId ? Number(excludeClaimId) : null]);
   const used = Number(countResult.rows[0]?.used || 0);
-  const remaining = limit ? Math.max(0, limit - used) : null;
+  const limited = limit !== null;
+  const remaining = limited ? Math.max(0, limit - used) : null;
   return {
     limit,
     used,
     remaining,
-    limited: Boolean(limit),
-    available: !limit || used < limit
+    limited,
+    available: !limited || used < limit
   };
 }
 

@@ -2370,3 +2370,483 @@ h1 {
     line-height: 1.2;
   }
 }
+
+/* Match the free-trial search treatment while preserving the paid checkout shell. */
+#checkoutMain:has(#purchaseCard.site-stage) .hero h1 {
+  margin: 12px 0 0;
+  font-size: clamp(29px, 8.2vw, 34px);
+  font-weight: 800;
+  line-height: 1.04;
+  letter-spacing: -0.052em;
+  white-space: nowrap;
+}
+
+#checkoutMain:has(#purchaseCard.site-stage) .hero p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#purchaseCard.site-stage .site-help {
+  margin: 24px 0 0;
+  overflow: hidden;
+  border: 1px solid rgba(105, 140, 175, 0.12);
+  border-radius: 14px;
+  background: rgba(10, 20, 34, 0.55);
+}
+
+#purchaseCard.site-stage .site-help summary {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  color: #e8edf5;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 90ms ease-out;
+}
+
+#purchaseCard.site-stage .site-help-label {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#purchaseCard.site-stage .site-help-icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#purchaseCard.site-stage .site-help summary::after {
+  content: "+";
+  flex: 0 0 auto;
+  float: none;
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+#purchaseCard.site-stage .site-help[open] summary::after { content: "\2212"; }
+#purchaseCard.site-stage .site-help summary:active { transform: translateY(1px); }
+
+#purchaseCard.site-stage .site-help summary:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px rgba(102, 237, 255, 0.62);
+}
+
+#purchaseCard.site-stage .site-guide,
+#purchaseCard.site-stage .site-help .site-guide {
+  display: block;
+  margin: 0;
+  padding: 18px 16px;
+  overflow: visible;
+  border: 0;
+  border-top: 1px solid rgba(105, 140, 175, 0.1);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+#purchaseCard.site-stage .site-guide > h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  text-align: left;
+}
+
+#purchaseCard.site-stage .site-guide-description {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+#purchaseCard.site-stage .site-guide-body { display: block; }
+
+#purchaseCard.site-stage .site-guide-visual {
+  position: relative;
+  width: 144px;
+  height: 205px;
+  min-height: 0;
+  margin: 18px auto 0;
+  overflow: visible;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#purchaseCard.site-stage .site-guide .terminal-device {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: block;
+  width: auto;
+  height: 205px;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  transform: translateX(-50%);
+  filter: none;
+}
+
+#purchaseCard.site-stage .site-name-highlight {
+  position: absolute;
+  z-index: 1;
+  top: 12px;
+  left: 37px;
+  width: 70px;
+  height: 118px;
+  border: 1px solid rgba(85, 221, 181, 0.5);
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+#purchaseCard.site-stage .site-guide-copy {
+  margin-top: 12px;
+  text-align: left;
+}
+
+#purchaseCard.site-stage .site-guide-copy p {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#purchaseCard.site-stage .site-guide-copy strong {
+  display: inline;
+  margin: 0;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 700;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #purchaseCard.site-stage .site-help summary:hover {
+    color: var(--text);
+    background: rgba(105, 140, 175, 0.065);
+    box-shadow: inset 0 0 0 1px rgba(105, 140, 175, 0.12);
+  }
+}
+
+@media (max-width: 369px) {
+  #purchaseCard.site-stage .site-help summary {
+    gap: 10px;
+    padding-inline: 12px;
+    font-size: 14px;
+  }
+
+  #purchaseCard.site-stage .site-help-label { gap: 8px; }
+}
+
+@media (max-width: 329px) {
+  #checkoutMain:has(#purchaseCard.site-stage) .hero h1 { white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #purchaseCard.site-stage .site-help summary { transition: color 150ms ease, background-color 150ms ease; }
+  #purchaseCard.site-stage .site-help summary:active { transform: none; }
+}
+
+/* Review and pay: quieter transaction summary without changing checkout behavior. */
+#checkoutMain:has(#purchaseCard.review-stage) {
+  padding-top: 18px;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .hero {
+  padding-bottom: 18px;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .hero h1 {
+  margin-top: 0;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .hero p {
+  display: none;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .eyebrow {
+  display: none;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .steps {
+  margin-bottom: 14px;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .step:not(:last-child)::after {
+  background: rgba(151, 178, 210, 0.1);
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .step.complete:not(:last-child)::after {
+  background: rgba(36, 215, 240, 0.28);
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) .step.active .step-number {
+  box-shadow: 0 0 0 3px rgba(36, 215, 240, 0.06);
+}
+
+.card.review-stage {
+  height: auto;
+  min-height: 0;
+  padding: 24px 22px 20px;
+  border-color: rgba(151, 178, 210, 0.1);
+  background: rgba(10, 22, 36, 0.9);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.review-stage .section-title-row {
+  margin-bottom: 0;
+}
+
+.review-stage .section-title-row h2 {
+  font-size: 1.12rem;
+}
+
+.review-stage .section + .section {
+  margin-top: 24px;
+}
+
+.review-stage .checkout-section {
+  gap: 0;
+  min-height: 0;
+}
+
+.review-stage .purchase-summary {
+  gap: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.review-stage .summary-label {
+  margin-bottom: 10px;
+}
+
+.review-stage .summary-site-row {
+  align-items: center;
+  gap: 14px;
+}
+
+.review-stage .summary-site-row .change-button {
+  min-height: 44px;
+  margin-block: -10px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 8px;
+  color: #a9eaf3;
+  background: transparent;
+}
+
+.review-stage .summary-site-row .change-button:hover {
+  border-color: transparent;
+  color: #f2fbff;
+  background: rgba(36, 215, 240, 0.05);
+}
+
+.review-stage .selected-address {
+  margin-top: 8px;
+}
+
+.review-stage .summary-divider {
+  background: rgba(151, 178, 210, 0.1);
+}
+
+.review-stage .total-box {
+  align-items: flex-start;
+}
+
+.review-stage .total-box span {
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.review-stage .renewal-note {
+  margin-top: 3px;
+  font-size: 14px;
+}
+
+.review-stage .total-box .price {
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.review-stage .checkout-field-group {
+  margin-top: 28px;
+  padding: 0;
+}
+
+.review-stage .email-field {
+  gap: 8px;
+}
+
+.review-stage .email-input {
+  min-height: 56px;
+  border: 1px solid rgba(151, 178, 210, 0.18);
+  border-radius: 15px;
+  background: rgba(3, 10, 19, 0.46);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.review-stage .email-input:focus {
+  border: 1px solid #24d7f0;
+  box-shadow: 0 0 0 3px rgba(36, 215, 240, 0.08);
+}
+
+.review-stage .email-input:not(:placeholder-shown):not(.invalid):not(:focus) {
+  border-color: rgba(151, 178, 210, 0.2);
+}
+
+.review-stage .promo-field {
+  margin: 22px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.review-stage .promo-field summary {
+  min-height: 48px;
+  padding: 4px 1px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.review-stage .promo-panel {
+  padding: 7px 0 2px;
+}
+
+.review-stage .payment-final {
+  gap: 0;
+  margin-top: 22px;
+  padding-top: 0;
+}
+
+.review-stage .payment-heading-row {
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.review-stage .payment-icon {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+  border: 0;
+  border-radius: 0;
+  color: #65ddeb;
+  background: transparent;
+}
+
+.review-stage .payment-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.review-stage .payment-heading {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.review-stage .checkout-button,
+.review-stage .free-checkout-button {
+  height: 56px;
+  min-height: 56px;
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(36, 215, 240, 0.14);
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.review-stage .checkout-button:hover,
+.review-stage .free-checkout-button:hover {
+  box-shadow: 0 12px 27px rgba(36, 215, 240, 0.17);
+}
+
+.review-stage .checkout-button:disabled {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.review-stage .checkout-trust {
+  justify-content: center;
+  gap: 6px;
+  margin: 14px 0 0;
+  color: #7f93aa;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.review-stage .checkout-trust span {
+  color: var(--green);
+  font-size: 0.75rem;
+}
+
+.review-stage .payment-final > .message:not(:empty) {
+  margin: 9px 0 0;
+}
+
+#checkoutMain:has(#purchaseCard.review-stage) > .support-note {
+  margin-top: 24px;
+  color: #7f93aa;
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  #checkoutMain:has(#purchaseCard.review-stage) {
+    padding-top: 16px;
+  }
+
+  .card.review-stage {
+    padding: 24px 20px 20px;
+  }
+
+  .review-stage .total-box .price {
+    font-size: 30px;
+  }
+}
+
+@media (max-width: 360px) {
+  .review-stage .checkout-trust {
+    justify-content: center;
+    font-size: 12px;
+  }
+}

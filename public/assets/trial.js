@@ -11,11 +11,18 @@ let claiming = false;
 const els = {
   unavailable: document.getElementById("trialUnavailable"),
   claimed: document.getElementById("trialClaimed"),
+  siteFull: document.getElementById("trialSiteFull"),
+  siteFullName: document.getElementById("trialSiteFullName"),
+  siteFullBuy: document.getElementById("trialSiteFullBuy"),
+  siteFullBack: document.getElementById("trialSiteFullBack"),
+  progress: document.getElementById("trialProgress"),
   form: document.getElementById("trialFormPanel"),
   search: document.getElementById("trialSiteSearch"),
   results: document.getElementById("trialSiteResults"),
   selected: document.getElementById("selectedTrialSite"),
-  message: document.getElementById("trialMessage")
+  message: document.getElementById("trialMessage"),
+  helpToggle: document.getElementById("siteHelpToggle"),
+  helpPanel: document.getElementById("siteHelpPanel")
 };
 
 function setMessage(text, tone = "") {
@@ -187,6 +194,35 @@ function renderSelectedSite(site, state = "") {
   }
 }
 
+function showSiteFull(site) {
+  const siteName = String(site?.name || "this laundry room");
+  const params = new URLSearchParams({ site: String(site?.id || ""), source: "free-trial-full" });
+  els.form.classList.add("hidden");
+  els.siteFullName.textContent = siteName;
+  els.siteFullBuy.href = `/pay.html?${params.toString()}`;
+  els.progress?.classList.add("hidden");
+  document.body.classList.add("trial-site-full-active");
+  els.siteFull.classList.remove("hidden");
+}
+
+function chooseAnotherSite() {
+  selectedSite = null;
+  searchRequest += 1;
+  els.siteFull.classList.add("hidden");
+  document.body.classList.remove("trial-site-full-active");
+  els.progress?.classList.remove("hidden");
+  els.form.classList.remove("hidden");
+  els.search.disabled = false;
+  els.search.value = "";
+  els.search.setAttribute("aria-expanded", "false");
+  els.results.replaceChildren();
+  els.results.classList.add("hidden");
+  els.selected.replaceChildren();
+  els.selected.classList.add("hidden");
+  setMessage("");
+  window.setTimeout(() => els.search.focus(), 0);
+}
+
 async function claimTrial() {
   if (!selectedSite || claiming) return;
   claiming = true;
@@ -221,7 +257,8 @@ async function claimTrial() {
       return;
     }
     if (error.code === "site_trial_limit_reached") {
-      setMessage("Free trials for this laundry room are full this week. Search for another site.", "bad");
+      showSiteFull(selectedSite);
+      return;
     } else {
       setMessage(error.message, "bad");
     }
@@ -238,4 +275,13 @@ els.search.addEventListener("input", () => {
   els.selected.classList.add("hidden");
   searchTimer = setTimeout(searchSites, 230);
 });
+
+els.helpToggle?.addEventListener("click", () => {
+  const expanded = els.helpToggle.getAttribute("aria-expanded") === "true";
+  els.helpToggle.setAttribute("aria-expanded", String(!expanded));
+  els.helpPanel?.setAttribute("aria-hidden", String(expanded));
+});
+
+els.siteFullBack?.addEventListener("click", chooseAnotherSite);
+
 initialise();

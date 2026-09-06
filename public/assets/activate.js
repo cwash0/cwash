@@ -164,6 +164,7 @@ activationSiteSelector = window.CircuitWashSiteSelector.create({
   input: els.changeSiteSearch,
   results: els.changeSiteResults,
   spinner: els.changeSiteSearchSpinner,
+  formatAddress: window.CircuitWashSiteSelector.formatAddress,
   currentSiteId: () => CURRENT_SITE_ID,
   onSelect: (site, button, state) => {
     if (state.selected || String(site.id || "") === CURRENT_SITE_ID) closeChangeSite();
@@ -187,6 +188,22 @@ let rxBuf = new Uint8Array(0);
 const msgQueue = [];
 let waiters = [];
 let machinePickerReturnFocus = null;
+
+function normaliseAccessCode(value) {
+  return String(value || "").toUpperCase();
+}
+
+function normalisePinInput() {
+  const current = els.pinInput.value;
+  const normalised = normaliseAccessCode(current);
+  if (normalised === current) return;
+  const selectionStart = els.pinInput.selectionStart;
+  const selectionEnd = els.pinInput.selectionEnd;
+  els.pinInput.value = normalised;
+  if (selectionStart !== null && selectionEnd !== null) {
+    try { els.pinInput.setSelectionRange(selectionStart, selectionEnd); } catch (_) {}
+  }
+}
 
 function accessCodeLooksValid(value = els.pinInput.value) {
   return String(value || "").trim().length > 0;
@@ -1164,7 +1181,7 @@ function unlockApp() {
 async function tryUnlock({ code = "", silent = false } = {}) {
   if (unlocking) return false;
 
-  const entered = String(code || els.pinInput.value || "").trim();
+  const entered = normaliseAccessCode(code || els.pinInput.value).trim();
   if (!entered) {
     if (!silent) setPinError("Enter your access code to continue.");
     updateUnlockButtonState();
@@ -1278,7 +1295,7 @@ async function tryUnlock({ code = "", silent = false } = {}) {
 async function pasteAccessCode() {
   try {
     const clipboardText = await navigator.clipboard.readText();
-    const pasted = String(clipboardText || "").trim();
+    const pasted = normaliseAccessCode(clipboardText).trim();
     if (pasted) els.pinInput.value = pasted;
     setPinError("");
     updateUnlockButtonState();
@@ -1290,7 +1307,19 @@ async function pasteAccessCode() {
 
 async function setupFreeActivationLink() {
   if (!els.freeActivationLink) return;
+  els.freeActivationLink.classList.add("hidden");
+  els.freeActivationLink.href = "/trial.html";
+  if (els.freeActivationLabel) els.freeActivationLabel.textContent = "New to CircuitWash? Try your first wash free";
   try {
+    const response = await fetch("/.netlify/functions/free-trial", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status" })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data?.enabled) return;
+
     const claim = JSON.parse(localStorage.getItem("zaftFreeTrialClaim") || "null");
     if (claim?.used || claim?.activatedAt) return;
     if (claim?.token) {
@@ -1311,16 +1340,13 @@ async function setupFreeActivationLink() {
         localStorage.setItem("zaftFreeTrialClaim", JSON.stringify({ ...claim, used: true, activatedAt: session.activatedAt || new Date().toISOString() }));
         return;
       }
-      localStorage.removeItem("zaftFreeTrialClaim");
+      if (sessionResponse.status === 400 || sessionResponse.status === 404 || session?.error === "trial_not_found") {
+        localStorage.removeItem("zaftFreeTrialClaim");
+      } else {
+        return;
+      }
     }
-    const response = await fetch("/.netlify/functions/free-trial", {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "status" })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok && data?.enabled) els.freeActivationLink.classList.remove("hidden");
+    els.freeActivationLink.classList.remove("hidden");
   } catch (_) {}
 }
 
@@ -2061,7 +2087,8 @@ els.upgradePaymentCloseBtn.addEventListener("click", closeUpgradePaymentSheet);
 els.upgradeCardToggle.addEventListener("click", toggleUpgradeCardPayment);
 upgradePaymentRoot.querySelectorAll("[data-close-payment-sheet]").forEach((element) => element.addEventListener("click", closeUpgradePaymentSheet));
 els.upgradePaymentForm.addEventListener("submit", (event) => { event.preventDefault(); confirmUpgradePayment(); });
-els.pinInput.addEventListener("input", () => {
+els.pinInput.addEventListener("input", (event) => {
+  if (!event.isComposing) normalisePinInput();
   setPinError("");
   updateUnlockButtonState();
 });

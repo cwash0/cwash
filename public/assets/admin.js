@@ -19,6 +19,9 @@ let codesData = [];
 let promosData = [];
 let analyticsData = null;
 let analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
+let analyticsView = "overview";
+let selectedAnalyticsCity = "";
+let selectedAnalyticsCompare = "";
 let editingPromo = null;
 let promoFilterTimer = null;
 let promoSiteSearchTimer = null;
@@ -44,7 +47,10 @@ const els = {
   metricActivations: $("metricActivations"), metricSupport: $("metricSupport"), metricSupportSub: $("metricSupportSub"), trendChart: $("trendChart"),
   recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), orderTypeBreakdown: $("orderTypeBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
   reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsRange: $("analyticsRange"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsPeriodMetric: $("analyticsPeriodMetric"), analyticsPeriodSub: $("analyticsPeriodSub"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsNoOrderSub: $("analyticsNoOrderSub"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsDataQuality: $("analyticsDataQuality"), analyticsTrendSummary: $("analyticsTrendSummary"), analyticsDemandTrend: $("analyticsDemandTrend"), analyticsActivationTrend: $("analyticsActivationTrend"), analyticsTopSites: $("analyticsTopSites"), analyticsTopSearches: $("analyticsTopSearches"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), analyticsHitsPageStatus: $("analyticsHitsPageStatus"), analyticsHitsPrev: $("analyticsHitsPrev"), analyticsHitsNext: $("analyticsHitsNext"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
-  withinCityViralityMetric: $("withinCityViralityMetric"), withinCityViralitySample: $("withinCityViralitySample"), crossCityViralityMetric: $("crossCityViralityMetric"), crossCityViralitySample: $("crossCityViralitySample"), geographicViralitySummary: $("geographicViralitySummary"), geographicLocationCoverage: $("geographicLocationCoverage"), geographicViralityTrend: $("geographicViralityTrend"), geographicCityRows: $("geographicCityRows"), geographicRoutes: $("geographicRoutes"),
+  networkOverviewSummary: $("networkOverviewSummary"), networkActiveUsers: $("networkActiveUsers"), networkActiveUsersDelta: $("networkActiveUsersDelta"), networkNewUsers: $("networkNewUsers"), networkNewUsersDelta: $("networkNewUsersDelta"), networkRepresentedCities: $("networkRepresentedCities"), networkNewCities: $("networkNewCities"), networkNewCitiesDelta: $("networkNewCitiesDelta"), networkActivatedCities: $("networkActivatedCities"), networkActivatedSample: $("networkActivatedSample"), networkActivationRate: $("networkActivationRate"), networkActivationDelta: $("networkActivationDelta"),
+  spreadBalance: $("spreadBalance"), breadthDepthSummary: $("breadthDepthSummary"), cityLifecycleStrip: $("cityLifecycleStrip"), cityCoverageSummary: $("cityCoverageSummary"), cityLocationCoverage: $("cityLocationCoverage"), cityCoverageTrend: $("cityCoverageTrend"), cityLifecycleFunnel: $("cityLifecycleFunnel"), newCitiesList: $("newCitiesList"),
+  observedSpreadRate: $("observedSpreadRate"), observedSpreadRateDelta: $("observedSpreadRateDelta"), boundaryCrossingRatio: $("boundaryCrossingRatio"), boundaryCrossingDelta: $("boundaryCrossingDelta"), cityTakeoffRate: $("cityTakeoffRate"), medianSecondUser: $("medianSecondUser"), medianSecondUserDelta: $("medianSecondUserDelta"), medianActivation: $("medianActivation"), medianSeedInterval: $("medianSeedInterval"), medianSeedIntervalDelta: $("medianSeedIntervalDelta"), newCitySeedTrend: $("newCitySeedTrend"), growthBalanceTrend: $("growthBalanceTrend"), cityRampCurves: $("cityRampCurves"), cityBenchmarks: $("cityBenchmarks"), cityCoverageRows: $("cityCoverageRows"), existingCityGrowthRows: $("existingCityGrowthRows"), cityDepthDistribution: $("cityDepthDistribution"), cityMigrations: $("cityMigrations"), cityConcentration: $("cityConcentration"), cityCohortRows: $("cityCohortRows"),
+  cityExplorerSelect: $("cityExplorerSelect"), cityExplorerCompareSelect: $("cityExplorerCompareSelect"), cityExplorerTitle: $("cityExplorerTitle"), cityExplorerEmpty: $("cityExplorerEmpty"), cityExplorerContent: $("cityExplorerContent"), cityExplorerFacts: $("cityExplorerFacts"), cityExplorerMilestones: $("cityExplorerMilestones"), cityExplorerComparison: $("cityExplorerComparison"), cityExplorerActivity: $("cityExplorerActivity"), cityExplorerSites: $("cityExplorerSites"),
   ordersBody: $("ordersBody"), reloadOrdersBtn: $("reloadOrdersBtn"), orderStatusFilter: $("orderStatusFilter"), orderSearch: $("orderSearch"), clearOrderSearchBtn: $("clearOrderSearchBtn"), ordersSummary: $("ordersSummary"), cleanupCreatedHours: $("cleanupCreatedHours"), cleanupCreatedOrdersBtn: $("cleanupCreatedOrdersBtn"), ordersMessage: $("ordersMessage"), siteSearchMode: $("siteSearchMode"), adminSiteSearch: $("adminSiteSearch"),
   siteResults: $("siteResults"), selectedAdminSite: $("selectedAdminSite"), newCode: $("newCode"), newCodeWeeklyLimit: $("newCodeWeeklyLimit"), generateCodeBtn: $("generateCodeBtn"), createCodeBtn: $("createCodeBtn"),
   codeCreateMessage: $("codeCreateMessage"), codeFilter: $("codeFilter"), reloadCodesBtn: $("reloadCodesBtn"), codesBody: $("codesBody"),
@@ -282,34 +288,35 @@ async function loadAnalytics() {
   els.adminLoginAttemptsBody.innerHTML = '<tr><td colspan="3" class="muted">Loading...</td></tr>';
   els.analyticsDemandTrend.innerHTML = '<div class="analytics-empty">Loading aggregated demand...</div>';
   els.analyticsActivationTrend.innerHTML = '<div class="analytics-empty">Loading aggregated activations...</div>';
-  els.geographicViralityTrend.innerHTML = '<div class="analytics-empty">Loading geographic virality...</div>';
+  els.cityCoverageTrend.innerHTML = '<div class="analytics-empty">Loading city coverage...</div>';
   analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
   try {
-    analyticsData = await api("analytics", { limit: 25, periodDays: Number(els.analyticsRange.value) || 30 });
+    analyticsData = await api("analytics", { limit: 25, periodDays: selectedAnalyticsPeriod() });
     renderAnalytics(analyticsData);
   } catch (error) {
     els.analyticsHitsBody.innerHTML = `<tr><td colspan="5" class="muted">${escapeHtml(error.message)}</td></tr>`;
     els.adminLoginAttemptsBody.innerHTML = `<tr><td colspan="3" class="muted">${escapeHtml(error.message)}</td></tr>`;
     els.analyticsDemandTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
     els.analyticsActivationTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
-    els.geographicViralityTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
+    els.cityCoverageTrend.innerHTML = `<div class="analytics-empty">${escapeHtml(error.message)}</div>`;
   }
 }
 
 function renderAnalytics(data) {
   const s = data.summary || {};
-  const periodDays = Number(data.meta?.periodDays) || Number(els.analyticsRange.value) || 30;
+  const periodDays = Number(data.meta?.periodDays) || 30;
+  const periodLabel = data.meta?.periodKey === "all" ? "All-time" : `${periodDays}-day`;
   const periodHits = Number(s.periodHits) || 0;
   const noOrderHits = Number(s.noOrderHits) || 0;
   const noOrderRate = periodHits ? (noOrderHits / periodHits) * 100 : 0;
   els.analyticsTodayMetric.textContent = formatNumber(s.todayHits);
   els.analyticsPeriodMetric.textContent = formatNumber(periodHits);
-  els.analyticsPeriodSub.textContent = `${periodDays}-day valid activity`;
+  els.analyticsPeriodSub.textContent = `${periodLabel} valid activity`;
   els.analyticsNoOrderMetric.textContent = `${noOrderRate.toFixed(1)}%`;
   els.analyticsNoOrderSub.textContent = `${formatNumber(noOrderHits)} of ${formatNumber(periodHits)} selections`;
   els.analyticsUniqueMetric.textContent = formatNumber(s.uniqueVisitors);
   els.analyticsRejectedAdminMetric.textContent = formatNumber(s.rejectedAdminLogins);
-  els.analyticsBotSub.textContent = `${periodDays}-day deduplicated visitors`;
+  els.analyticsBotSub.textContent = `${periodLabel} deduplicated visitors`;
   const excluded = (Number(s.excludedHits) || 0) + (Number(s.botHits) || 0);
   els.analyticsDataQuality.textContent = `${formatNumber(excluded)} filtered`;
   els.analyticsDataQuality.classList.toggle("hidden", excluded <= 0);
@@ -317,55 +324,450 @@ function renderAnalytics(data) {
   renderBreakdown(els.analyticsTopSearches, data.topSearches || [], "query", "searches");
   renderBreakdown(els.analyticsSearchModes, data.modes || [], "mode", "hits");
   renderBreakdown(els.analyticsReferrers, data.referrers || [], "referrer", "hits");
-  renderAnalyticsTrend(data.daily || []);
+  renderAnalyticsTrend(data.daily || [], data.meta || {});
   renderAnalyticsBars(els.analyticsActivationTrend, data.weeklyActivations || [], "activations", "week", "activations", "activeCodes");
-  renderGeographicVirality(data.geographicVirality || {});
+  renderOrganicSpread(data.cityCoverage || {}, periodLabel);
   analyticsHitPaging.nextCursor = data.recentHitsPage?.nextCursor || null;
   renderAnalyticsHits(data.recentHits || []);
   updateAnalyticsPager(data.recentHitsPage || {});
   renderAdminLoginAttempts(data.adminLoginAttempts || []);
 }
 
-function renderGeographicVirality(data) {
-  const available=Boolean(data.available);
-  els.withinCityViralityMetric.textContent=formatCoefficient(data.withinCityVirality);
-  els.crossCityViralityMetric.textContent=formatCoefficient(data.crossCityVirality);
-  els.withinCityViralitySample.textContent=available
-    ? `${formatNumber(data.qualifyingCityCount)} qualifying cities · min ${formatNumber(data.minCitySample)} sources each`
-    : "Referral attribution unavailable";
-  els.crossCityViralitySample.textContent=available
-    ? `${formatNumber(data.crossCityPairs)} unique cross-city pairs · ${formatNumber(data.knownLocationSources)} known-location sources`
-    : "Referral attribution unavailable";
-  els.geographicLocationCoverage.textContent=`Location coverage ${(Number(data.locationCoverage||0)*100).toFixed(0)}%`;
-  els.geographicViralitySummary.textContent=available
-    ? `${formatNumber(data.eligibleSourceAccommodations)} eligible source accommodations · ${formatNumber(data.sameSitePairsExcluded)} same-site pairs excluded · ${formatNumber(data.attributionDays)}-day attribution window`
-    : (data.reason||"Referral attribution data is not available.");
-
-  renderViralityTrend(data.trend||[],available);
-  els.geographicCityRows.innerHTML="";
-  const cities=data.cities||[];
-  if(!cities.length){els.geographicCityRows.innerHTML='<tr><td colspan="6" class="muted">No qualifying geographic propagation in this period.</td></tr>';}
-  else cities.forEach(city=>{const tr=document.createElement("tr");appendCell(tr,city.city);appendCell(tr,formatNumber(city.activeAccommodations));appendCell(tr,formatNumber(city.sameCityAccommodationsReached));appendCell(tr,formatCoefficient(city.withinCityK));appendCell(tr,formatNumber(city.otherCitiesReached));appendCell(tr,formatNumber(city.crossCityAcquisitions));els.geographicCityRows.appendChild(tr);});
-  renderBreakdown(els.geographicRoutes,(data.topRoutes||[]).map(route=>({route:`${route.sourceCity} → ${route.targetCity}`,count:route.accommodations})),"route","count");
+function selectedAnalyticsPeriod() {
+  return els.analyticsRange.value === "all" ? "all" : Number(els.analyticsRange.value) || 30;
 }
 
-function renderViralityTrend(points,available){
-  els.geographicViralityTrend.replaceChildren();
-  els.geographicViralityTrend.style.setProperty("--bar-count",String(Math.max(points.length,1)));
-  if(!available||!points.length){const empty=document.createElement("div");empty.className="analytics-empty";empty.textContent=available?"No geographic virality activity in this period.":"Referral attribution unavailable.";els.geographicViralityTrend.appendChild(empty);return;}
-  const maximum=Math.max(...points.flatMap(point=>[Number(point.withinCityVirality)||0,Number(point.crossCityVirality)||0]),.01);
-  points.forEach(point=>{const group=document.createElement("div");group.className="virality-trend-group";const within=Number(point.withinCityVirality)||0;const cross=Number(point.crossCityVirality)||0;group.title=`${formatAnalyticsDate(point.start)} · within ${formatCoefficient(within)} · cross ${formatCoefficient(cross)} · ${formatNumber(point.eligibleSourceAccommodations)} sources`;group.setAttribute("aria-label",group.title);group.tabIndex=0;const bars=document.createElement("div");bars.className="virality-trend-bars";const withinBar=document.createElement("span");withinBar.className="within";withinBar.style.height=`${Math.max(within?3:0,within/maximum*100)}%`;const crossBar=document.createElement("span");crossBar.className="cross";crossBar.style.height=`${Math.max(cross?3:0,cross/maximum*100)}%`;bars.append(withinBar,crossBar);const label=document.createElement("small");label.textContent=formatAnalyticsDate(point.start,true);group.append(bars,label);els.geographicViralityTrend.appendChild(group);});
+function renderOrganicSpread(data, periodLabel) {
+  const available = Boolean(data.available);
+  const overview = data.overview || {};
+  const comparison = data.comparison || {};
+  const spread = data.spread || {};
+  const breadthDepth = data.breadthDepth || {};
+  const citiesBefore = Number(data.cityCountBefore) || 0;
+  const citiesAfter = Number(data.cityCountAfter) || 0;
+  const newCitiesAdded = Number(data.newCitiesAdded) || 0;
+
+  els.networkActiveUsers.textContent = formatNumber(overview.activeUsers);
+  els.networkActiveUsersDelta.textContent = formatMetricComparison(comparison.activeUsers);
+  els.networkNewUsers.textContent = `+${formatNumber(overview.newJoinedUsers)}`;
+  els.networkNewUsersDelta.textContent = formatMetricComparison(comparison.newJoinedUsers);
+  els.networkRepresentedCities.textContent = formatNumber(overview.representedCities);
+  els.networkNewCities.textContent = `+${formatNumber(overview.newCitiesSeeded)}`;
+  els.networkNewCitiesDelta.textContent = formatMetricComparison(comparison.newCitiesSeeded);
+  els.networkActivatedCities.textContent = `${formatNumber(overview.activatedNewCities)} of ${formatNumber(overview.matureCitySeeds)}`;
+  els.networkActivatedSample.textContent = Number(overview.pendingCitySeeds) > 0 ? `${formatNumber(overview.pendingCitySeeds)} still maturing` : "No pending seeds";
+  els.networkActivationRate.textContent = formatPercent(overview.cityActivationRate);
+  els.networkActivationDelta.textContent = formatPointComparison(comparison.cityActivationRate);
+  els.networkOverviewSummary.textContent = available
+    ? `${periodLabel} view: ${formatNumber(newCitiesAdded)} ${newCitiesAdded === 1 ? "city seed" : "city seeds"}; lifetime coverage is ${formatNumber(citiesAfter)} cities.`
+    : (data.reason || "City spread data is not available.");
+
+  els.observedSpreadRate.textContent = metricOrDash(spread.observedSpreadRate, " / 100");
+  els.observedSpreadRateDelta.textContent = formatMetricComparison(comparison.spreadRate, " / 100");
+  els.boundaryCrossingRatio.textContent = formatPercent(spread.boundaryCrossingRatio);
+  els.boundaryCrossingDelta.textContent = formatPointComparison(comparison.boundaryCrossingRatio);
+  els.cityTakeoffRate.textContent = formatPercent(spread.cityTakeoffRate);
+  els.medianSecondUser.textContent = formatDays(spread.medianTimeToSecondDays);
+  els.medianSecondUserDelta.textContent = formatDaysComparison(comparison.medianTimeToSecondDays);
+  els.medianActivation.textContent = formatDays(spread.medianTimeToActivationDays);
+  els.medianSeedInterval.textContent = formatDays(spread.seedFrequency?.currentMedianDays);
+  els.medianSeedIntervalDelta.textContent = formatDaysComparison(comparison.seedIntervalDays);
+
+  els.cityLocationCoverage.textContent = `Location coverage ${((Number(data.locationCoverage) || 0) * 100).toFixed(0)}%`;
+  els.cityCoverageSummary.textContent = available
+    ? `Coverage moved from ${formatNumber(citiesBefore)} to ${formatNumber(citiesAfter)} represented cities. Active clusters require at least ${formatNumber(data.rules?.activationUsers || 3)} joined users plus activity in the period.`
+    : (data.reason || "City coverage data is not available.");
+
+  renderSpreadBalance(data.spreadBalance || {});
+  renderBreadthDepth(breadthDepth, overview, comparison, spread);
+  renderLifecycleStrip(data.lifecycle || {});
+  renderCityCoverageTrend(data.coverageTrend || data.trend || [], available);
+  renderSeedTrend(data.coverageTrend || []);
+  renderGrowthBalanceTrend(data.coverageTrend || []);
+  renderLifecycleFunnel(data.funnel || []);
+  renderNewCities(data.newCities || []);
+  renderRampCurves(data.rampCurves || []);
+  renderBenchmarks(data.networkBenchmarks || {}, data.persistence || {});
+  renderCityGrowthTable(data.cities || []);
+  renderExistingCityGrowth(data.existingCityGrowth || []);
+  renderDepthDistribution(data.depthDistribution || []);
+  renderMigrations(data.migrations || []);
+  renderConcentration(spread.concentration || {});
+  renderCohorts(data.cohorts || []);
+  renderCityExplorer(data.cityExplorer || []);
 }
 
-function formatCoefficient(value){return `${(Number(value)||0).toFixed(2)}×`;}
+function renderCityCoverageTrend(points, available) {
+  els.cityCoverageTrend.replaceChildren();
+  els.cityCoverageTrend.style.setProperty("--bar-count", String(Math.max(points.length, 1)));
+  if (!available || !points.length) {
+    const empty = document.createElement("div");
+    empty.className = "analytics-empty";
+    empty.textContent = available ? "No city coverage history in this period." : "City coverage data is not available.";
+    els.cityCoverageTrend.appendChild(empty);
+    return;
+  }
+  const maximum = Math.max(...points.map((point) => Number(point.representedCities ?? point.citiesAfter) || 0), 1);
+  points.forEach((point) => {
+    const totalCities = Number(point.representedCities ?? point.citiesAfter) || 0;
+    const activeCities = Number(point.activeCities) || 0;
+    const newCities = Number(point.newCitiesSeeded ?? point.newCitiesAdded) || 0;
+    const group = document.createElement("div");
+    group.className = "coverage-trend-group";
+    group.title = `${formatAnalyticsDate(point.start)} to ${formatAnalyticsDate(point.end)} · ${formatNumber(totalCities)} represented · ${formatNumber(activeCities)} active · +${formatNumber(newCities)} seeded`;
+    group.setAttribute("aria-label", group.title);
+    group.tabIndex = 0;
+    const bars = document.createElement("div");
+    bars.className = "coverage-trend-bars";
+    const totalBar = document.createElement("span");
+    totalBar.className = "total represented";
+    totalBar.style.height = `${Math.max(totalCities ? 3 : 0, totalCities / maximum * 100)}%`;
+    const activeBar = document.createElement("span");
+    activeBar.className = "active";
+    activeBar.style.height = `${Math.max(activeCities ? 3 : 0, activeCities / maximum * 100)}%`;
+    const newBar = document.createElement("span");
+    newBar.className = "new";
+    newBar.style.height = `${Math.max(newCities ? 3 : 0, newCities / maximum * 100)}%`;
+    bars.append(totalBar, activeBar, newBar);
+    const label = document.createElement("small");
+    label.textContent = formatAnalyticsDate(point.start, true);
+    group.append(bars, label);
+    els.cityCoverageTrend.appendChild(group);
+  });
+}
 
-function renderAnalyticsTrend(points) {
+function renderNewCities(cities) {
+  els.newCitiesList.replaceChildren();
+  if (!cities.length) {
+    const empty = document.createElement("div");
+    empty.className = "analytics-empty";
+    empty.textContent = "No cities gained their first joined user in this period.";
+    els.newCitiesList.appendChild(empty);
+    return;
+  }
+  cities.forEach((city) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "new-city-card";
+    card.addEventListener("click", () => openCityExplorer(city.city));
+    const header = document.createElement("div");
+    const name = document.createElement("strong"); name.textContent = city.city;
+    const state = document.createElement("span"); state.className = `city-state state-${String(city.state || "seeded").toLowerCase()}`; state.textContent = city.state || "Seeded";
+    header.append(name, state);
+    const facts = document.createElement("dl");
+    addFact(facts, "Seeded", formatAnalyticsDate(city.firstJoinedAt));
+    addFact(facts, "Age", `${formatNumber(city.ageDays)} days`);
+    addFact(facts, "Users now", formatNumber(city.usersNow));
+    addFact(facts, "Users D7", metricOrDash(city.ramp?.d7));
+    addFact(facts, "Sites", formatNumber(city.sitesRepresented));
+    addFact(facts, "Second user", Number.isFinite(city.timeToSecondDays) ? `Day ${city.timeToSecondDays}` : "Not reached");
+    card.append(header, facts);
+    els.newCitiesList.appendChild(card);
+  });
+}
+
+function renderSpreadBalance(balance) {
+  els.spreadBalance.replaceChildren();
+  const total = Number(balance.totalNewUsers) || 0;
+  const rows = [
+    { label: "Inside existing cities", value: Number(balance.existingCityUsers) || 0, share: balance.existingCityShare, className: "existing" },
+    { label: "First user in a new city", value: Number(balance.newCitySeedUsers) || 0, share: balance.newCityShare, className: "seed" }
+  ];
+  const totalRow = document.createElement("div"); totalRow.className = "spread-balance-total";
+  totalRow.innerHTML = `<span>Total new users</span><strong>${formatNumber(total)}</strong>`;
+  els.spreadBalance.appendChild(totalRow);
+  const bar = document.createElement("div"); bar.className = "spread-balance-bar";
+  rows.forEach((item) => { const segment = document.createElement("span"); segment.className = item.className; segment.style.width = `${Number(item.share) || 0}%`; segment.title = `${item.label}: ${formatNumber(item.value)} (${formatPercent(item.share)})`; bar.appendChild(segment); });
+  els.spreadBalance.appendChild(bar);
+  rows.forEach((item) => {
+    const row = document.createElement("div"); row.className = "spread-balance-row";
+    row.innerHTML = `<span><i class="${item.className}"></i>${item.label}</span><strong>${formatNumber(item.value)} <small>${formatPercent(item.share)}</small></strong>`;
+    els.spreadBalance.appendChild(row);
+  });
+  const outcome = document.createElement("p");
+  outcome.className = "spread-outcome";
+  outcome.textContent = `${formatNumber(balance.newCitiesSeeded)} seeded · ${formatNumber(balance.activated)} activated · ${formatNumber(balance.stillEmerging)} emerging · ${formatNumber(balance.isolated)} isolated`;
+  els.spreadBalance.appendChild(outcome);
+}
+
+function renderBreadthDepth(data, overview = {}, comparison = {}, spread = {}) {
+  renderMiniMetrics(els.breadthDepthSummary, [
+    ["Geographic breadth", `${formatNumber(data.representedCities)} cities`],
+    ["Active city growth", `${formatNumber(overview.activeCities)} active · ${comparison.activeCities?.percent === null || comparison.activeCities?.percent === undefined ? "no baseline" : `${Number(comparison.activeCities.percent) > 0 ? "+" : ""}${formatPercent(comparison.activeCities.percent)}`}`],
+    ["Median cluster depth", `${formatNumber(data.medianUsersPerCity)} users`],
+    ["New-city growth", `+${formatNumber(data.newCityGrowth)} seed users`],
+    ["Existing-city growth", `+${formatNumber(data.existingCityUserGrowth)} users`],
+    ["New-city share", formatPercent(data.newCityShareOfGrowth)],
+    ["Intra-cluster expansion", metricOrDash(spread.intraClusterExpansionRate, " / 100")]
+  ]);
+}
+
+function renderLifecycleStrip(lifecycle) {
+  els.cityLifecycleStrip.replaceChildren();
+  ["Established", "Growing", "Activated", "Emerging", "Seeded", "Dormant"].forEach((state) => {
+    const item = document.createElement("div"); item.className = `lifecycle-state state-${state.toLowerCase()}`;
+    const value = document.createElement("strong"); value.textContent = formatNumber(lifecycle[state]);
+    const label = document.createElement("span"); label.textContent = state;
+    item.append(value, label); els.cityLifecycleStrip.appendChild(item);
+  });
+}
+
+function renderLifecycleFunnel(stages) {
+  els.cityLifecycleFunnel.replaceChildren();
+  if (!stages.length) { els.cityLifecycleFunnel.innerHTML = '<div class="analytics-empty">No city lifecycle data yet.</div>'; return; }
+  stages.forEach((stage, index) => {
+    if (index > 0) {
+      const arrow = document.createElement("div"); arrow.className = "funnel-arrow";
+      arrow.textContent = stage.conversion === null || stage.conversion === undefined ? "↓" : `↓ ${formatPercent(stage.conversion)}`;
+      els.cityLifecycleFunnel.appendChild(arrow);
+    }
+    const row = document.createElement("div"); row.className = "funnel-stage";
+    const label = document.createElement("span"); label.textContent = stage.label;
+    const value = document.createElement("strong"); value.textContent = formatNumber(stage.value);
+    row.append(label, value);
+    if (Number(stage.pending) > 0) { const pending = document.createElement("small"); pending.textContent = `${formatNumber(stage.pending)} pending maturity`; row.appendChild(pending); }
+    els.cityLifecycleFunnel.appendChild(row);
+  });
+}
+
+function renderRampCurves(curves) {
+  els.cityRampCurves.replaceChildren();
+  if (!curves.length) { els.cityRampCurves.innerHTML = '<div class="analytics-empty">No cities were seeded in this period.</div>'; return; }
+  const days = [0, 7, 14, 30, 60, 90];
+  const header = document.createElement("div"); header.className = "ramp-row ramp-header";
+  header.appendChild(document.createElement("span"));
+  days.forEach((day) => { const label = document.createElement("span"); label.textContent = `D${day}`; header.appendChild(label); });
+  els.cityRampCurves.appendChild(header);
+  curves.forEach((curve) => {
+    const row = document.createElement("button"); row.type = "button"; row.className = "ramp-row"; row.addEventListener("click", () => openCityExplorer(curve.city));
+    const city = document.createElement("strong"); city.textContent = curve.city; row.appendChild(city);
+    days.forEach((day) => { const value = document.createElement("span"); value.className = "ramp-value"; value.textContent = curve[`d${day}`] === null ? "Pending" : formatNumber(curve[`d${day}`]); row.appendChild(value); });
+    els.cityRampCurves.appendChild(row);
+  });
+}
+
+function renderBenchmarks(data, persistence = {}) {
+  els.cityBenchmarks.replaceChildren();
+  [["D7", data.d7Users], ["D14", data.d14Users], ["D30", data.d30Users], ["D60", data.d60Users], ["D90", data.d90Users]].forEach(([label, value]) => {
+    const row = document.createElement("div"); row.className = "benchmark-row";
+    row.innerHTML = `<span>${label}</span><strong>${metricOrDash(value, " users")}</strong>`;
+    els.cityBenchmarks.appendChild(row);
+  });
+  const note = document.createElement("p"); note.className = "muted"; note.textContent = `Typical second user: ${formatDays(data.timeToSecondDays)} · activation: ${formatDays(data.timeToActivationDays)}`; els.cityBenchmarks.appendChild(note);
+  const survival = document.createElement("p"); survival.className = "benchmark-survival"; survival.textContent = `City persistence · D7 ${formatPercent(persistence.d7?.rate)} (${formatNumber(persistence.d7?.eligible)} eligible) · D30 ${formatPercent(persistence.d30?.rate)} (${formatNumber(persistence.d30?.eligible)} eligible) · D60 ${formatPercent(persistence.d60?.rate)} (${formatNumber(persistence.d60?.eligible)} eligible)`; els.cityBenchmarks.appendChild(survival);
+}
+
+function renderSeedTrend(points) {
+  els.newCitySeedTrend.replaceChildren();
+  if (!points.length) { els.newCitySeedTrend.innerHTML = '<div class="analytics-empty">No city seed history in this window.</div>'; return; }
+  const maximum = Math.max(...points.map((point) => Number(point.newCitiesSeeded) || 0), 1);
+  points.forEach((point) => {
+    const row = document.createElement("div"); row.className = "seed-trend-row";
+    const label = document.createElement("span"); label.textContent = formatAnalyticsDate(point.start, true);
+    const bar = document.createElement("div"); const fill = document.createElement("i"); fill.style.width = `${Math.max(Number(point.newCitiesSeeded) ? 5 : 0, Number(point.newCitiesSeeded) / maximum * 100)}%`; bar.appendChild(fill);
+    const value = document.createElement("strong"); value.textContent = formatNumber(point.newCitiesSeeded);
+    row.append(label, bar, value); els.newCitySeedTrend.appendChild(row);
+  });
+}
+
+function renderGrowthBalanceTrend(points) {
+  els.growthBalanceTrend.replaceChildren();
+  if (!points.length) { els.growthBalanceTrend.innerHTML = '<div class="analytics-empty">No joined-user growth in this window.</div>'; return; }
+  const maximum = Math.max(...points.map((point) => (Number(point.existingCityUsers) || 0) + (Number(point.newCitySeedUsers) || 0)), 1);
+  points.forEach((point) => {
+    const existing = Number(point.existingCityUsers) || 0; const seeded = Number(point.newCitySeedUsers) || 0; const total = existing + seeded;
+    const row = document.createElement("div"); row.className = "growth-balance-row"; row.title = `${formatAnalyticsDate(point.start)} · ${formatNumber(existing)} existing-city users · ${formatNumber(seeded)} new-city seed users`;
+    const label = document.createElement("span"); label.textContent = formatAnalyticsDate(point.start, true);
+    const bar = document.createElement("div"); bar.style.width = `${Math.max(total ? 5 : 0, total / maximum * 100)}%`;
+    const existingSegment = document.createElement("i"); existingSegment.className = "existing"; existingSegment.style.width = `${total ? existing / total * 100 : 0}%`;
+    const seedSegment = document.createElement("i"); seedSegment.className = "seed"; seedSegment.style.width = `${total ? seeded / total * 100 : 0}%`;
+    bar.append(existingSegment, seedSegment);
+    const value = document.createElement("strong"); value.textContent = formatNumber(total);
+    row.append(label, bar, value); els.growthBalanceTrend.appendChild(row);
+  });
+}
+
+function renderCityGrowthTable(cities) {
+  els.cityCoverageRows.replaceChildren();
+  if (!cities.length) { els.cityCoverageRows.innerHTML = '<tr><td colspan="9" class="muted">No joined users have a mapped city yet.</td></tr>'; return; }
+  cities.forEach((city) => {
+    const tr = document.createElement("tr");
+    const cityCell = document.createElement("td"); const cityButton = document.createElement("button"); cityButton.type = "button"; cityButton.className = "table-link"; cityButton.textContent = city.city; cityButton.addEventListener("click", () => openCityExplorer(city.city)); cityCell.appendChild(cityButton); tr.appendChild(cityCell);
+    appendCell(tr, city.newlyRepresented ? formatAnalyticsDate(city.firstJoinedAt, true) : "—");
+    appendCell(tr, formatNumber(city.usersBefore));
+    appendCell(tr, `+${formatNumber(city.usersJoinedDuringPeriod)}`);
+    appendCell(tr, formatNumber(city.usersNow));
+    appendCell(tr, formatNumber(city.sitesRepresented));
+    appendCell(tr, metricOrDash(city.ramp?.d30));
+    appendCell(tr, city.growthPercent === null || city.growthPercent === undefined ? "—" : `+${formatPercent(city.growthPercent)}`);
+    appendPillCell(tr, city.state || "Seeded");
+    els.cityCoverageRows.appendChild(tr);
+  });
+}
+
+function renderExistingCityGrowth(cities) {
+  els.existingCityGrowthRows.replaceChildren();
+  if (!cities.length) { els.existingCityGrowthRows.innerHTML = '<tr><td colspan="6" class="muted">No pre-existing city clusters in this window.</td></tr>'; return; }
+  cities.forEach((city) => {
+    const tr = document.createElement("tr");
+    const cityCell = document.createElement("td"); const button = document.createElement("button"); button.type = "button"; button.className = "table-link"; button.textContent = city.city; button.addEventListener("click", () => openCityExplorer(city.city)); cityCell.appendChild(button); tr.appendChild(cityCell);
+    appendCell(tr, formatNumber(city.usersBefore)); appendCell(tr, `+${formatNumber(city.usersJoinedDuringPeriod)}`); appendCell(tr, formatNumber(city.usersNow)); appendCell(tr, city.growthPercent === null ? "—" : `+${formatPercent(city.growthPercent)}`); appendCell(tr, `+${formatNumber(city.newSites)}`); els.existingCityGrowthRows.appendChild(tr);
+  });
+}
+
+function renderDepthDistribution(items) {
+  els.cityDepthDistribution.replaceChildren();
+  const maximum = Math.max(...items.map((item) => Number(item.cities) || 0), 1);
+  items.forEach((item) => {
+    const row = document.createElement("div"); row.className = "distribution-row";
+    row.innerHTML = `<span>${escapeHtml(item.label)}</span><div><i style="width:${Math.max(Number(item.cities) ? 5 : 0, Number(item.cities) / maximum * 100)}%"></i></div><strong>${formatNumber(item.cities)}</strong>`;
+    els.cityDepthDistribution.appendChild(row);
+  });
+}
+
+function renderMigrations(items) {
+  els.cityMigrations.replaceChildren();
+  if (!items.length) { els.cityMigrations.innerHTML = '<div class="analytics-empty">No lifecycle state changes in this period.</div>'; return; }
+  items.forEach((item) => { const row = document.createElement("div"); row.className = "migration-row"; const label = document.createElement("span"); label.textContent = item.transition; const value = document.createElement("strong"); value.textContent = `${formatNumber(item.cities)} ${Number(item.cities) === 1 ? "city" : "cities"}`; row.append(label, value); els.cityMigrations.appendChild(row); });
+}
+
+function renderConcentration(data) {
+  renderMiniMetrics(els.cityConcentration, [
+    ["Top city", data.topCity || "—"],
+    ["Top city share", formatPercent(data.topCitySelectionShare)],
+    ["Top 3 share", formatPercent(data.topThreeSelectionShare)],
+    ["Activity outside largest", formatPercent(data.activityOutsideLargestCity)],
+    ["Geographic diversification", formatPercent(data.geographicDiversification)]
+  ]);
+}
+
+function renderCohorts(cohorts) {
+  els.cityCohortRows.replaceChildren();
+  if (!cohorts.length) { els.cityCohortRows.innerHTML = '<tr><td colspan="7" class="muted">No city cohorts yet.</td></tr>'; return; }
+  cohorts.forEach((cohort) => {
+    const tr = document.createElement("tr"); appendCell(tr, cohort.label); appendCell(tr, formatNumber(cohort.cities)); appendCell(tr, `${formatNumber(cohort.activated)} of ${formatNumber(cohort.activationEligible)}`); appendCell(tr, formatPercent(cohort.activationRate)); appendCell(tr, `${formatNumber(cohort.active30)} of ${formatNumber(cohort.active30Eligible)}`); appendCell(tr, metricOrDash(cohort.medianD30Users)); appendCell(tr, Number(cohort.pending) ? `${formatNumber(cohort.pending)} pending` : "Complete"); els.cityCohortRows.appendChild(tr);
+  });
+}
+
+function renderCityExplorer(cities) {
+  const previous = selectedAnalyticsCity || els.cityExplorerSelect.value;
+  els.cityExplorerSelect.replaceChildren();
+  const placeholder = document.createElement("option"); placeholder.value = ""; placeholder.textContent = "Choose a city"; els.cityExplorerSelect.appendChild(placeholder);
+  cities.slice().sort((a, b) => a.city.localeCompare(b.city)).forEach((city) => { const option = document.createElement("option"); option.value = city.city; option.textContent = `${city.city} · ${city.state}`; els.cityExplorerSelect.appendChild(option); });
+  selectedAnalyticsCity = cities.some((city) => city.city === previous) ? previous : "";
+  els.cityExplorerSelect.value = selectedAnalyticsCity;
+  populateCityComparison(cities);
+  renderSelectedCityExplorer(cities);
+}
+
+function renderSelectedCityExplorer(cities = analyticsData?.cityCoverage?.cityExplorer || []) {
+  const city = cities.find((item) => item.city === selectedAnalyticsCity);
+  els.cityExplorerEmpty.classList.toggle("hidden", Boolean(city));
+  els.cityExplorerContent.classList.toggle("hidden", !city);
+  els.cityExplorerTitle.textContent = city?.city || "Choose a city";
+  if (!city) return;
+  populateCityComparison(cities);
+  els.cityExplorerFacts.replaceChildren();
+  [["State", city.state], ["Cluster age", `${formatNumber(city.ageDays)} days`], ["Joined users", formatNumber(city.usersNow)], ["Active users", formatNumber(city.activeUsers)], ["Represented sites", formatNumber(city.sitesRepresented)], ["New sites", `+${formatNumber(city.newSites)}`]].forEach(([label, value]) => {
+    const card = document.createElement("article"); card.className = "panel network-kpi"; const span = document.createElement("span"); span.textContent = label; const strong = document.createElement("strong"); strong.textContent = value; card.append(span, strong); els.cityExplorerFacts.appendChild(card);
+  });
+  renderExplorerMilestones(city);
+  const comparisonCity = cities.find((item) => item.city === selectedAnalyticsCompare);
+  renderExplorerComparison({
+    city: city.compare?.city || {},
+    networkMedian: comparisonCity?.compare?.city || city.compare?.networkMedian || {}
+  }, comparisonCity?.city || "Network median");
+  renderAnalyticsBars(els.cityExplorerActivity, city.activityTrend || [], "activeUsers", "start", "active users", "selections");
+  renderBreakdown(els.cityExplorerSites, city.sites || [], "name", "users");
+}
+
+function populateCityComparison(cities) {
+  const previous = selectedAnalyticsCompare || els.cityExplorerCompareSelect.value;
+  els.cityExplorerCompareSelect.replaceChildren();
+  const typical = document.createElement("option"); typical.value = ""; typical.textContent = "Network median"; els.cityExplorerCompareSelect.appendChild(typical);
+  cities.filter((city) => city.city !== selectedAnalyticsCity).sort((a, b) => a.city.localeCompare(b.city)).forEach((city) => { const option = document.createElement("option"); option.value = city.city; option.textContent = city.city; els.cityExplorerCompareSelect.appendChild(option); });
+  selectedAnalyticsCompare = cities.some((city) => city.city === previous && city.city !== selectedAnalyticsCity) ? previous : "";
+  els.cityExplorerCompareSelect.value = selectedAnalyticsCompare;
+}
+
+function renderExplorerMilestones(city) {
+  els.cityExplorerMilestones.replaceChildren();
+  [["First user", city.milestones?.users1], ["Second user", city.milestones?.users2], ["3 users", city.milestones?.users3], ["5 users", city.milestones?.users5], ["10 users", city.milestones?.users10]].forEach(([label, milestone]) => {
+    const row = document.createElement("div"); row.className = "milestone-row"; const name = document.createElement("span"); name.textContent = label; const value = document.createElement("strong"); value.textContent = milestone ? `Day ${milestone.day}` : "Not reached"; row.append(name, value); els.cityExplorerMilestones.appendChild(row);
+  });
+  const persistence = document.createElement("p"); persistence.className = "muted"; persistence.textContent = `Persistence: D7 ${formatBooleanMetric(city.persistence?.d7)} · D30 ${formatBooleanMetric(city.persistence?.d30)} · D60 ${formatBooleanMetric(city.persistence?.d60)}`; els.cityExplorerMilestones.appendChild(persistence);
+}
+
+function renderExplorerComparison(compare, comparisonLabel = "Network median") {
+  els.cityExplorerComparison.replaceChildren();
+  const rows = [["D7 users", "d7Users", ""], ["D30 users", "d30Users", ""], ["Time to second", "timeToSecondDays", " days"], ["Sites at D30", "sitesAtD30", ""], ["30d persistence", "d30PersistenceRate", "%"]];
+  const header = document.createElement("div"); header.className = "comparison-row comparison-head"; const metricLabel = document.createElement("span"); metricLabel.textContent = "Metric"; const thisLabel = document.createElement("strong"); thisLabel.textContent = "This city"; const compareLabel = document.createElement("strong"); compareLabel.textContent = comparisonLabel; header.append(metricLabel, thisLabel, compareLabel); els.cityExplorerComparison.appendChild(header);
+  rows.forEach(([label, key, suffix]) => { const row = document.createElement("div"); row.className = "comparison-row"; const name = document.createElement("span"); name.textContent = label; const city = document.createElement("strong"); city.textContent = metricOrDash(compare.city?.[key], suffix); const medianValue = document.createElement("strong"); medianValue.textContent = metricOrDash(compare.networkMedian?.[key], suffix); row.append(name, city, medianValue); els.cityExplorerComparison.appendChild(row); });
+}
+
+function openCityExplorer(cityName) {
+  selectedAnalyticsCity = cityName;
+  openAnalyticsView("explorer");
+  if (els.cityExplorerSelect) els.cityExplorerSelect.value = cityName;
+  renderSelectedCityExplorer();
+}
+
+function openAnalyticsView(view) {
+  analyticsView = ["overview", "spread", "explorer", "usage"].includes(view) ? view : "overview";
+  document.querySelectorAll("[data-analytics-view]").forEach((button) => button.classList.toggle("active", button.dataset.analyticsView === analyticsView));
+  document.querySelectorAll("[data-analytics-panel]").forEach((panel) => panel.classList.toggle("hidden", panel.dataset.analyticsPanel !== analyticsView));
+}
+
+function renderMiniMetrics(container, items) {
+  container.replaceChildren();
+  items.forEach(([labelText, valueText]) => { const item = document.createElement("div"); const label = document.createElement("span"); label.textContent = labelText; const value = document.createElement("strong"); value.textContent = valueText; item.append(label, value); container.appendChild(item); });
+}
+
+function addFact(list, labelText, valueText) {
+  const wrapper = document.createElement("div"); const term = document.createElement("dt"); term.textContent = labelText; const detail = document.createElement("dd"); detail.textContent = valueText; wrapper.append(term, detail); list.appendChild(wrapper);
+}
+
+function metricOrDash(value, suffix = "") {
+  return Number.isFinite(Number(value)) && value !== null ? `${formatNumber(value)}${suffix}` : "—";
+}
+
+function formatPercent(value) {
+  return Number.isFinite(Number(value)) && value !== null ? `${Number(value).toFixed(Number(value) % 1 ? 1 : 0)}%` : "—";
+}
+
+function formatDays(value) {
+  return Number.isFinite(Number(value)) && value !== null ? `${Number(value).toFixed(Number(value) % 1 ? 1 : 0)} days` : "—";
+}
+
+function formatMetricComparison(comparison, suffix = "") {
+  if (!comparison || !Number.isFinite(Number(comparison.change))) return "No previous-period baseline";
+  const sign = Number(comparison.change) > 0 ? "+" : "";
+  const percent = comparison.percent === null || comparison.percent === undefined ? "" : ` (${Number(comparison.percent) > 0 ? "+" : ""}${formatPercent(comparison.percent)})`;
+  return `${sign}${formatNumber(comparison.change)}${suffix}${percent} vs previous`;
+}
+
+function formatPointComparison(comparison) {
+  if (!comparison || comparison.points === null || comparison.points === undefined || !Number.isFinite(Number(comparison.points))) return "No mature previous-period baseline";
+  return `${Number(comparison.points) > 0 ? "+" : ""}${Number(comparison.points).toFixed(1)}pp vs previous`;
+}
+
+function formatDaysComparison(comparison) {
+  if (!comparison || comparison.days === null || comparison.days === undefined || !Number.isFinite(Number(comparison.days))) return "No comparable previous-period result";
+  return `${Number(comparison.days) > 0 ? "+" : ""}${Number(comparison.days).toFixed(1)} days vs previous`;
+}
+
+function formatBooleanMetric(value) {
+  return value === null || value === undefined ? "pending" : value ? "active" : "inactive";
+}
+
+function renderAnalyticsTrend(points, meta = {}) {
   renderAnalyticsBars(els.analyticsDemandTrend, points, "hits", "date", "selections", "uniqueVisitors");
   const total = points.reduce((sum, point) => sum + (Number(point.hits) || 0), 0);
   const busiest = points.reduce((best, point) => Number(point.hits) > Number(best?.hits || 0) ? point : best, null);
   const average = points.length ? total / points.length : 0;
+  const bucketLabel = Number(meta.periodDays) <= 90 ? "day" : Number(meta.periodDays) <= 180 ? "week" : "month";
   els.analyticsTrendSummary.textContent = busiest
-    ? `${average.toFixed(1)} selections per day · peak ${formatNumber(busiest.hits)} on ${formatAnalyticsDate(busiest.date)}`
+    ? `${average.toFixed(1)} selections per ${bucketLabel} · peak ${formatNumber(busiest.hits)} from ${formatAnalyticsDate(busiest.date)}`
     : "No valid selection activity in this period.";
 }
 
@@ -419,7 +821,7 @@ async function loadAnalyticsHitPage(cursor, direction) {
     const data = await api("analytics_events", {
       limit: 25,
       cursor: cursor || null,
-      periodDays: Number(els.analyticsRange.value) || 30
+      periodDays: selectedAnalyticsPeriod()
     });
     analyticsHitPaging.cursor = cursor || null;
     analyticsHitPaging.nextCursor = data.recentHitsPage?.nextCursor || null;
@@ -767,7 +1169,7 @@ function selectTrialLimitSite(site, weeklyLimit = "") {
   els.selectedTrialLimitSite.classList.remove("hidden");
   els.trialLimitSiteResults.classList.add("hidden");
   els.trialLimitSiteSearch.value = site.name;
-  els.trialWeeklyLimitInput.value = weeklyLimit ? String(weeklyLimit) : "";
+  els.trialWeeklyLimitInput.value = weeklyLimit === "" || weeklyLimit === null || weeklyLimit === undefined ? "" : String(weeklyLimit);
 }
 
 async function saveTrialSiteLimit() {
@@ -776,8 +1178,8 @@ async function saveTrialSiteLimit() {
     return;
   }
   const weeklyLimit = Number.parseInt(els.trialWeeklyLimitInput.value, 10);
-  if (!Number.isInteger(weeklyLimit) || weeklyLimit < 1) {
-    setMessage(els.freeTrialMessage, "Enter a weekly limit of at least 1.", "bad");
+  if (!Number.isInteger(weeklyLimit) || weeklyLimit < 0 || weeklyLimit > 10000) {
+    setMessage(els.freeTrialMessage, "Enter a weekly claim limit from 0 to 10,000.", "bad");
     return;
   }
   els.saveTrialLimitBtn.disabled = true;
@@ -785,7 +1187,9 @@ async function saveTrialSiteLimit() {
   try {
     await api("free_trial_set_site_limit", { siteId: selectedTrialLimitSite.id, weeklyLimit });
     await loadFreeTrials();
-    setMessage(els.freeTrialMessage, `Saved weekly limit for ${selectedTrialLimitSite.name}.`, "ok");
+    setMessage(els.freeTrialMessage, weeklyLimit === 0
+      ? `New free-trial claims are paused for ${selectedTrialLimitSite.name}.`
+      : `Saved weekly claim limit for ${selectedTrialLimitSite.name}.`, "ok");
   } catch (error) {
     setMessage(els.freeTrialMessage, error.message, "bad");
   } finally {
@@ -1518,6 +1922,9 @@ initializeTimedOutputs();
 els.loginForm.addEventListener("submit",event=>{event.preventDefault();signIn(els.adminCodeInput.value);});
 els.logoutBtn.addEventListener("click",()=>signOut()); els.refreshBtn.addEventListener("click",refreshActive); els.reloadAnalyticsBtn.addEventListener("click",loadAnalytics); els.reloadOrdersBtn.addEventListener("click",loadOrders); els.reloadCodesBtn.addEventListener("click",loadCodes); els.reloadPromosBtn.addEventListener("click",loadPromos); els.reloadFeedbackBtn.addEventListener("click",loadFeedback); els.reloadSupportBtn.addEventListener("click",loadSupport);
 els.analyticsRange.addEventListener("change",loadAnalytics);
+document.querySelectorAll("[data-analytics-view]").forEach(button=>button.addEventListener("click",()=>openAnalyticsView(button.dataset.analyticsView)));
+els.cityExplorerSelect.addEventListener("change",()=>{selectedAnalyticsCity=els.cityExplorerSelect.value;renderSelectedCityExplorer();});
+els.cityExplorerCompareSelect.addEventListener("change",()=>{selectedAnalyticsCompare=els.cityExplorerCompareSelect.value;renderSelectedCityExplorer();});
 els.analyticsHitsPrev.addEventListener("click",()=>loadAnalyticsHitPage(analyticsHitPaging.history.at(-1) || null,"newer"));
 els.analyticsHitsNext.addEventListener("click",()=>loadAnalyticsHitPage(analyticsHitPaging.nextCursor,"older"));
 els.orderStatusFilter.addEventListener("change",()=>{setMessage(els.ordersMessage,"","");loadOrders();});

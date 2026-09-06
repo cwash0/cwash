@@ -308,9 +308,7 @@ function updateAccessSummaryCopy() {
     const productName = String(product.name || "Laundry access");
     const weeklyLimit = Number(product.weeklyLimit || 0);
     if (els.heroSubtext) {
-      els.heroSubtext.textContent = selectedSite
-        ? "Check your site and email, then pay securely."
-        : "Find your laundry room to get started.";
+      els.heroSubtext.textContent = selectedSite ? "" : "Let’s find your laundry room.";
     }
     els.accessSummaryLabel.textContent = productName;
     els.accessSummaryNote.textContent = weeklyLimit ? `Up to ${weeklyLimit} activations per week` : "";
@@ -613,7 +611,8 @@ function stripeAppearance() {
 
 function checkoutReturnUrl() {
   const params = new URLSearchParams({ checkout: "return" });
-  if (checkoutParams.get("source") === "free-trial") params.set("source", "free-trial");
+  const source = String(checkoutParams.get("source") || "");
+  if (["free-trial", "free-trial-full"].includes(source)) params.set("source", source);
   return `${location.origin}/pay.html?${params.toString()}`;
 }
 
@@ -728,10 +727,11 @@ function selectSite(site, { track = true } = {}) {
   els.siteSearch.value = selectedSite.name;
   els.siteSearch.disabled = true;
   els.purchaseCard.classList.remove("site-stage");
+  els.purchaseCard.classList.add("review-stage");
   els.siteSearchWrap.classList.add("hidden");
   els.siteHelp.classList.add("hidden");
   els.siteHelp.open = false;
-  els.purchaseHeading.textContent = "Review your purchase";
+  els.purchaseHeading.textContent = "Your laundry access";
   if (els.heroEyebrow) els.heroEyebrow.textContent = "Buy access";
   if (els.heroTitle) els.heroTitle.textContent = "Review and pay";
   els.paymentSection.classList.remove("hidden");
@@ -848,11 +848,12 @@ function clearSelectedSite() {
   appliedPromo = null;
   resetStripeElements();
   els.selectedSite.classList.add("hidden");
-  els.purchaseHeading.textContent = "Choose your site";
+  els.purchaseHeading.textContent = "Where are you washing?";
   if (els.heroEyebrow) els.heroEyebrow.textContent = "Buy access";
-  if (els.heroTitle) els.heroTitle.textContent = "Choose your site";
-  if (els.heroSubtext) els.heroSubtext.textContent = "Find your laundry room to get started.";
+  if (els.heroTitle) els.heroTitle.textContent = "Where are you washing?";
+  if (els.heroSubtext) els.heroSubtext.textContent = "Let’s find your laundry room.";
   els.siteSearch.disabled = false;
+  els.purchaseCard.classList.remove("review-stage");
   els.purchaseCard.classList.add("site-stage");
   els.siteSearchWrap.classList.remove("hidden");
   els.siteHelp.classList.remove("hidden");
@@ -994,6 +995,7 @@ function showSuccess(result, { restored = false } = {}) {
 
   closePaymentSheet();
   setPaymentMessage("");
+  els.purchaseCard.classList.remove("review-stage");
   els.purchaseCard.classList.remove("site-stage");
   els.checkoutView.classList.add("hidden");
   els.successView.classList.remove("hidden");
@@ -1002,11 +1004,12 @@ function showSuccess(result, { restored = false } = {}) {
   if (els.heroSubtext) els.heroSubtext.textContent = "Copy your code or continue straight to the machine controls.";
   els.accessCode.textContent = purchase.code || "";
   const freeTrial = purchaseIsFreeTrial(purchase);
-  if (checkoutParams.get("source") === "free-trial" && !freeTrial) {
+  const conversionSource = String(checkoutParams.get("source") || "");
+  if (["free-trial", "free-trial-full"].includes(conversionSource) && !freeTrial) {
     window.CircuitWashAnalytics?.track("trial_converted_to_paid", {
-      source: "trial-completion-offer",
+      source: conversionSource === "free-trial-full" ? "trial-site-full" : "trial-completion-offer",
       auth_state: "authenticated",
-      trial_eligibility: "used"
+      trial_eligibility: conversionSource === "free-trial-full" ? "unavailable" : "used"
     }, { once: `trial_converted_to_paid:${purchase.orderId || "purchase"}` });
   }
   if (els.accessCodeLabel) {

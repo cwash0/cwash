@@ -1,18 +1,13 @@
 const crypto = require("crypto");
 const { Pool } = require("pg");
-const { getPublicSites, getSiteGeography, searchPublicSites } = require("./_site-data");
+const { getPublicSites, searchPublicSites } = require("./_site-data");
 // Reload this helper with the admin function during local preview hot updates.
 delete require.cache[require.resolve("./_custom-email")];
 const customEmail = require("./_custom-email");
 const { getValidatedAnalyticsSites } = require("./_analytics-validity");
 const { ensureOrderStorage } = require("./_order-storage");
 const { ensureSupportSchema } = require("./_support-schema");
-const {
-  DEFAULT_ATTRIBUTION_DAYS,
-  DEFAULT_MIN_CITY_SAMPLE,
-  calculateGeographicVirality,
-  calculateGeographicViralityTrend
-} = require("./_geographic-virality");
+const { calculateOrganicSpread } = require("./_city-coverage");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -393,6 +388,12 @@ async function ensureSchema() {
     await pool.query(`create index if not exists access_orders_type_completed_idx on access_orders(order_type, completed_at desc) where status = 'COMPLETED'`);
   }
 
+  if (await tableExists("activation_upgrade_orders")) {
+    await pool.query(`alter table activation_upgrade_orders add column if not exists payment_intent_id text`);
+    await pool.query(`create unique index if not exists activation_upgrade_payment_intent_idx on activation_upgrade_orders(payment_intent_id) where payment_intent_id is not null`);
+    await pool.query(`create index if not exists activation_upgrade_completed_idx on activation_upgrade_orders(completed_at desc) where status = 'COMPLETED'`);
+  }
+
   await pool.query(`
     create table if not exists site_interest_hits (
       id bigserial primary key,
@@ -536,8 +537,68 @@ function loginAttemptFingerprint(scope, value) {
   return crypto.createHmac("sha256", key).update(`${scope}:${String(value || "")}`).digest("hex");
 }
 
+async function getAdminOrderSource() {
+  const [accessOrdersExist, activationUpgradeOrdersExist] = await Promise.all([
+    tableExists("access_orders"),
+    tableExists("activation_upgrade_orders")
+  ]);
+  const sources = [];
+
+  if (accessOrdersExist) {
+    sources.push(`
+      select order_id, site_id, amount, currency, status,
+             coalesce(access_code, entitlement_access_code) as linked_access_code,
+             customer_email, email_status, payment_method,
+             order_type, quantity, entitlement_week_start, entitlement_week_end, provider_reference,
+             subtotal_amount, discount_amount, promo_code,
+             created_at, completed_at
+      from access_orders
+    `);
+  }
+
+  if (activationUpgradeOrdersExist) {
+    sources.push(`
+      select upgrade.order_id,
+             access.site_id,
+             upgrade.amount,
+             upgrade.currency,
+             upgrade.status,
+             upgrade.access_code as linked_access_code,
+             ${accessOrdersExist ? "original.customer_email" : "null::text"} as customer_email,
+             'NOT_REQUIRED'::text as email_status,
+             'stripe'::text as payment_method,
+             'weekly_activation_addon'::text as order_type,
+             greatest(coalesce(upgrade.bonus_activations, 1), 1)::int as quantity,
+             upgrade.week_start as entitlement_week_start,
+             case when upgrade.week_start is null then null else (upgrade.week_start + interval '7 days')::date end as entitlement_week_end,
+             coalesce(upgrade.payment_intent_id, upgrade.stripe_session_id) as provider_reference,
+             upgrade.amount as subtotal_amount,
+             0::numeric as discount_amount,
+             null::text as promo_code,
+             upgrade.created_at,
+             upgrade.completed_at
+      from activation_upgrade_orders upgrade
+      left join access_codes access on access.code = upgrade.access_code
+      ${accessOrdersExist ? `
+      left join lateral (
+        select coalesce(nullif(trim(original_order.customer_email), ''), nullif(trim(original_order.payer_email), '')) as customer_email
+        from access_orders original_order
+        where coalesce(original_order.access_code, original_order.entitlement_access_code) = upgrade.access_code
+          and original_order.order_id <> upgrade.order_id
+        order by original_order.completed_at desc nulls last, original_order.created_at desc
+        limit 1
+      ) original on true
+      where not exists (
+        select 1 from access_orders canonical_order where canonical_order.order_id = upgrade.order_id
+      )` : ""}
+    `);
+  }
+
+  return sources.length ? `admin_orders as (${sources.join(" union all ")})` : "";
+}
+
 async function getDashboard() {
-  const ordersExist = await tableExists("access_orders");
+  const adminOrderSource = await getAdminOrderSource();
   const usageExists = await tableExists("code_usage_weekly");
 
   let summary = {
@@ -563,8 +624,9 @@ async function getDashboard() {
   let sites = [];
   let recentOrders = [];
 
-  if (ordersExist) {
+  if (adminOrderSource) {
     const result = await pool.query(`
+      with ${adminOrderSource}
       select
         count(*) filter (where status = 'COMPLETED')::int as total_orders,
         coalesce(sum(amount) filter (where status = 'COMPLETED'), 0) as total_revenue,
@@ -580,7 +642,7 @@ async function getDashboard() {
         count(*) filter (where status = 'CREATED' and created_at < now() - interval '24 hours')::int as stale_created_orders,
         count(*) filter (where status = 'COMPLETED' and email_status = 'FAILED' and completed_at >= now() - interval '7 days')::int as recent_email_failures,
         coalesce(max(currency) filter (where status = 'COMPLETED'), 'GBP') as currency
-      from access_orders
+      from admin_orders
     `);
     const row = result.rows[0] || {};
     summary = {
@@ -602,7 +664,8 @@ async function getDashboard() {
     };
 
     const dailyResult = await pool.query(`
-      with dates as (
+      with ${adminOrderSource},
+      dates as (
         select generate_series(current_date - interval '29 days', current_date, interval '1 day')::date as day
       )
       select
@@ -610,7 +673,7 @@ async function getDashboard() {
         count(o.order_id)::int as orders,
         coalesce(sum(o.amount), 0) as revenue
       from dates
-      left join access_orders o
+      left join admin_orders o
         on o.status = 'COMPLETED'
        and (o.completed_at at time zone 'UTC')::date = dates.day
       group by dates.day
@@ -623,10 +686,11 @@ async function getDashboard() {
     }));
 
     const methodsResult = await pool.query(`
+      with ${adminOrderSource}
       select coalesce(nullif(payment_method, ''), 'unknown') as method,
              count(*)::int as orders,
              coalesce(sum(amount), 0) as revenue
-      from access_orders
+      from admin_orders
       where status = 'COMPLETED'
       group by 1
       order by orders desc
@@ -638,10 +702,11 @@ async function getDashboard() {
     }));
 
     const orderTypesResult = await pool.query(`
+      with ${adminOrderSource}
       select coalesce(nullif(order_type, ''), 'access_code') as order_type,
              count(*)::int as orders,
              coalesce(sum(amount), 0) as revenue
-      from access_orders
+      from admin_orders
       where status = 'COMPLETED'
       group by 1
       order by revenue desc, orders desc
@@ -653,8 +718,9 @@ async function getDashboard() {
     }));
 
     const sitesResult = await pool.query(`
+      with ${adminOrderSource}
       select site_id, count(*)::int as orders, coalesce(sum(amount), 0) as revenue
-      from access_orders
+      from admin_orders
       where status = 'COMPLETED'
       group by site_id
       order by revenue desc, orders desc
@@ -702,8 +768,15 @@ async function getDashboard() {
 }
 
 function analyticsPeriodDays(value) {
+  if (String(value || "").toLowerCase() === "all") return 36500;
   const days = Number.parseInt(String(value || "30"), 10);
-  return [7, 30, 90].includes(days) ? days : 30;
+  return [7, 30, 90, 180, 365, 36500].includes(days) ? days : 30;
+}
+
+function analyticsPeriodKey(value) {
+  return String(value || "").toLowerCase() === "all" || Number(value) === 36500
+    ? "all"
+    : String(analyticsPeriodDays(value));
 }
 
 function analyticsContext() {
@@ -727,8 +800,49 @@ const ANALYTICS_VALID_HIT_WHERE = `
   and site_id = any($1::text[])
 `;
 
+function analyticsUsageTrendQuery(periodDays) {
+  if (periodDays <= 90) return `
+    with date_range as (
+      select generate_series(
+        current_date - ($2::int - 1),
+        current_date,
+        interval '1 day'
+      )::date as day
+    ), activity as (
+      select
+        created_at::date as day,
+        count(*)::int as hits,
+        count(distinct visitor_hash) filter (where visitor_hash is not null)::int as unique_visitors
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at >= current_date - ($2::int - 1)
+      group by 1
+    )
+    select to_char(date_range.day, 'YYYY-MM-DD') as date,
+           coalesce(activity.hits, 0)::int as hits,
+           coalesce(activity.unique_visitors, 0)::int as unique_visitors
+    from date_range
+    left join activity using (day)
+    order by date_range.day
+  `;
+
+  const bucket = periodDays <= 180 ? "week" : "month";
+  return `
+    select
+      to_char(date_trunc('${bucket}', created_at), 'YYYY-MM-DD') as date,
+      count(*)::int as hits,
+      count(distinct visitor_hash) filter (where visitor_hash is not null)::int as unique_visitors
+    from site_interest_hits
+    where ${ANALYTICS_VALID_HIT_WHERE}
+      and created_at >= now() - ($2::int * interval '1 day')
+    group by 1
+    order by 1
+  `;
+}
+
 async function getAnalyticsData(body = {}) {
   const periodDays = analyticsPeriodDays(body.periodDays);
+  const periodKey = analyticsPeriodKey(body.periodDays);
   const limit = clampInt(body.limit, 10, 50, 25);
   const context = analyticsContext();
   const { siteMap, validatedSites, validSiteIds } = context;
@@ -803,30 +917,7 @@ async function getAnalyticsData(body = {}) {
       order by searches desc, query
       limit 10
     `, periodParams),
-    pool.query(`
-      with date_range as (
-        select generate_series(
-          current_date - ($2::int - 1),
-          current_date,
-          interval '1 day'
-        )::date as day
-      ), activity as (
-        select
-          created_at::date as day,
-          count(*)::int as hits,
-          count(distinct visitor_hash) filter (where visitor_hash is not null)::int as unique_visitors
-        from site_interest_hits
-        where ${ANALYTICS_VALID_HIT_WHERE}
-          and created_at >= current_date - ($2::int - 1)
-        group by 1
-      )
-      select to_char(date_range.day, 'YYYY-MM-DD') as date,
-             coalesce(activity.hits, 0)::int as hits,
-             coalesce(activity.unique_visitors, 0)::int as unique_visitors
-      from date_range
-      left join activity using (day)
-      order by date_range.day
-    `, periodParams),
+    pool.query(analyticsUsageTrendQuery(periodDays), periodParams),
     pool.query(`
       select
         count(*) filter (where created_at >= now() - interval '30 days')::int as rejected_30_days,
@@ -840,7 +931,7 @@ async function getAnalyticsData(body = {}) {
       limit 25
     `),
     getAnalyticsEvents({ periodDays, limit }, context),
-    getGeographicVirality(periodDays, context)
+    getCityCoverage(periodDays, context)
   ];
 
   if (ordersExist) {
@@ -877,7 +968,7 @@ async function getAnalyticsData(body = {}) {
     `));
   } else queryTasks.push(Promise.resolve({ rows: [] }));
 
-  const [summaryResult, qualityResult, topSitesResult, modesResult, referrersResult, topSearchesResult, dailyResult, adminSummaryResult, adminRowsResult, events, geographicVirality, orderSummaryResult, weeklyResult] = await Promise.all(queryTasks);
+  const [summaryResult, qualityResult, topSitesResult, modesResult, referrersResult, topSearchesResult, dailyResult, adminSummaryResult, adminRowsResult, events, cityCoverage, orderSummaryResult, weeklyResult] = await Promise.all(queryTasks);
   const summaryRow = summaryResult.rows[0] || {};
   const qualityRow = qualityResult.rows[0] || {};
   const orderRow = orderSummaryResult.rows[0] || {};
@@ -918,7 +1009,7 @@ async function getAnalyticsData(body = {}) {
   }));
 
   return {
-    meta: { periodDays, generatedAt: new Date().toISOString(), payloadModel: "aggregated" },
+    meta: { periodDays, periodKey, generatedAt: new Date().toISOString(), payloadModel: "aggregated" },
     summary,
     daily,
     weeklyActivations,
@@ -926,117 +1017,63 @@ async function getAnalyticsData(body = {}) {
     topSearches,
     modes,
     referrers,
-    geographicVirality,
+    cityCoverage,
     recentHits: events.recentHits,
     recentHitsPage: events.recentHitsPage,
     adminLoginAttempts
   };
 }
 
-async function getGeographicVirality(periodDays, context) {
-  const empty = {
-    available: false,
-    reason: "Referral attribution data is not available.",
-    attributionDays: DEFAULT_ATTRIBUTION_DAYS,
-    minCitySample: DEFAULT_MIN_CITY_SAMPLE,
-    eligibleSourceAccommodations: 0,
-    knownLocationSources: 0,
-    locationCoverage: 0,
-    qualifyingCityCount: 0,
-    withinCityVirality: 0,
-    withinCityOverall: 0,
-    crossCityVirality: 0,
-    withinCityPairs: 0,
-    crossCityPairs: 0,
-    sameSitePairsExcluded: 0,
-    unknownLocationPairs: 0,
-    cities: [],
-    topRoutes: [],
-    trend: []
-  };
-
-  const [referralsExist, usageExists, accessCodesExist] = await Promise.all([
-    tableExists("referral_rewards"),
-    tableExists("code_usage_weekly"),
-    tableExists("access_codes")
-  ]);
-  if (!referralsExist || !usageExists || !accessCodesExist) return empty;
-  if (!(await columnExists("referral_rewards", "referrer_code"))) return empty;
-
-  const hasReferredCode = await columnExists("referral_rewards", "referred_access_code");
-  const hasReferredOrder = await columnExists("referral_rewards", "referred_order_id");
-  const ordersExist = await tableExists("access_orders");
-  if (!hasReferredCode && !(hasReferredOrder && ordersExist)) return empty;
-
-  const eligibleResult = await pool.query(
+async function getCityCoverage(periodDays, context) {
+  const activityResult = await pool.query(
     `
-      with first_activation as (
-        select ac.site_id,
-               min(coalesce(u.first_used_at, u.week_start::timestamptz)) as activated_at
-        from code_usage_weekly u
-        join access_codes ac on ac.code = u.code
-        where ac.site_id = any($1::text[])
-          and u.login_count > 0
-        group by ac.site_id
-      )
-      select site_id, activated_at
-      from first_activation
-      where activated_at >= now() - ($2::int * interval '1 day')
-        and activated_at <= now()
-    `,
-    [context.validSiteIds, periodDays]
-  );
-
-  const targetCodeExpression = hasReferredCode && hasReferredOrder && ordersExist
-    ? "coalesce(rr.referred_access_code, referred_order.access_code)"
-    : hasReferredCode
-      ? "rr.referred_access_code"
-      : "referred_order.access_code";
-  const orderJoin = hasReferredOrder && ordersExist
-    ? "left join access_orders referred_order on referred_order.order_id = rr.referred_order_id"
-    : "";
-
-  const propagationResult = await pool.query(
-    `
-      select source_code.site_id as source_site_id,
-             target_code.site_id as target_site_id,
-             min(coalesce(target_usage.first_used_at, target_usage.week_start::timestamptz)) as converted_at
-      from referral_rewards rr
-      join access_codes source_code on source_code.code = rr.referrer_code
-      ${orderJoin}
-      join access_codes target_code on target_code.code = ${targetCodeExpression}
-      join code_usage_weekly target_usage
-        on target_usage.code = target_code.code
-       and target_usage.login_count > 0
-      where source_code.site_id = any($1::text[])
-        and target_code.site_id = any($1::text[])
-      group by source_code.site_id, target_code.site_id
+      select
+        case
+          when nullif(trim(visitor_hash), '') is not null then 'visitor:' || trim(visitor_hash)
+          when nullif(trim(session_hash), '') is not null then 'session:' || trim(session_hash)
+          else 'event:' || id::text
+        end as user_id,
+        site_id,
+        created_at as occurred_at
+      from site_interest_hits
+      where ${ANALYTICS_VALID_HIT_WHERE}
+        and created_at <= now()
+      order by created_at asc, id asc
     `,
     [context.validSiteIds]
   );
 
-  const cityBySite = Object.fromEntries(context.validSiteIds.map((siteId) => [siteId, getSiteGeography(siteId)?.city || ""]));
   const periodEnd = new Date();
-  const periodStart = new Date(periodEnd.getTime() - periodDays * 86400000);
+  const earliestActivity = activityResult.rows[0]?.occurred_at ? new Date(activityResult.rows[0].occurred_at) : null;
+  const periodStart = periodDays >= 36500 && Number.isFinite(earliestActivity?.getTime())
+    ? earliestActivity
+    : new Date(periodEnd.getTime() - periodDays * 86400000);
   const options = {
-    eligibleSources: eligibleResult.rows.map((row) => ({ siteId: row.site_id, activatedAt: row.activated_at })),
-    propagations: propagationResult.rows.map((row) => ({
-      sourceSiteId: row.source_site_id,
-      targetSiteId: row.target_site_id,
-      convertedAt: row.converted_at
+    events: activityResult.rows.map((row) => ({
+      userId: row.user_id,
+      siteId: row.site_id,
+      occurredAt: row.occurred_at
     })),
-    cityBySite,
+    cityBySite: Object.fromEntries(
+      [...context.validatedSites.valid.entries()].map(([siteId, entry]) => [siteId, entry.city || ""])
+    ),
+    siteById: Object.fromEntries(context.publicSites.map((site) => [site.id, site])),
+    rules: {
+      activationUsers: process.env.CITY_ACTIVATION_USERS,
+      establishedUsers: process.env.CITY_ESTABLISHED_USERS,
+      establishedActiveWeeks: process.env.CITY_ESTABLISHED_ACTIVE_WEEKS,
+      dormantDays: process.env.CITY_DORMANT_DAYS,
+      takeoffDays: process.env.CITY_TAKEOFF_DAYS
+    },
     periodStart,
-    periodEnd,
-    attributionDays: DEFAULT_ATTRIBUTION_DAYS,
-    minCitySample: DEFAULT_MIN_CITY_SAMPLE
+    periodEnd
   };
-  const result = calculateGeographicVirality(options);
+  const result = calculateOrganicSpread(options);
   return {
     available: true,
-    definition: "Successful first activation attributed through the existing referral relationship.",
+    definition: "Each deduplicated user's first valid production site selection determines their join city. Results measure observed city-cluster diffusion, never referral attribution.",
     ...result,
-    trend: calculateGeographicViralityTrend(options, periodDays <= 7 ? 7 : 8)
+    trend: result.coverageTrend
   };
 }
 
@@ -1080,7 +1117,8 @@ async function getAnalyticsEvents(body = {}, suppliedContext = null) {
 }
 
 async function getOrders(body = {}) {
-  if (!(await tableExists("access_orders"))) return [];
+  const adminOrderSource = await getAdminOrderSource();
+  if (!adminOrderSource) return [];
   const limit = clampInt(body.limit, 1, 200, 50);
   const status = String(body.status || "COMPLETED").trim().toUpperCase();
   const params = [];
@@ -1092,13 +1130,14 @@ async function getOrders(body = {}) {
   params.push(limit);
   const { rows } = await pool.query(
     `
+      with ${adminOrderSource}
       select order_id, site_id, amount, currency, status,
-             coalesce(access_code, entitlement_access_code) as linked_access_code,
+             linked_access_code,
              customer_email, email_status, payment_method,
              order_type, quantity, entitlement_week_start, entitlement_week_end, provider_reference,
              subtotal_amount, discount_amount, promo_code,
              created_at, completed_at
-      from access_orders
+      from admin_orders
       ${conditions.length ? `where ${conditions.join(" and ")}` : ""}
       order by coalesce(completed_at, created_at) desc
       limit $${params.length}
@@ -1613,8 +1652,7 @@ async function getFreeTrialData() {
   const weeklyResult = await pool.query(`
     select site_id, count(*)::int as used
     from free_trial_claims
-    where activated_at is not null
-      and activated_at >= date_trunc('week', now())
+    where created_at >= date_trunc('week', now())
     group by site_id
   `);
   const weeklyUsage = new Map(weeklyResult.rows.map((row) => [row.site_id, number(row.used)]));
@@ -1622,7 +1660,7 @@ async function getFreeTrialData() {
     .map(([siteId, limit]) => {
       const site = siteMap.get(siteId);
       const weeklyLimit = normalizeFreeTrialLimit(limit);
-      if (!site || !weeklyLimit) return null;
+      if (!site || weeklyLimit === null) return null;
       const usedThisWeek = weeklyUsage.get(siteId) || 0;
       return {
         siteId,
@@ -1687,7 +1725,7 @@ async function getFreeTrialSiteLimits(db = pool) {
 
 function normalizeFreeTrialLimit(value) {
   const limit = Number.parseInt(String(value ?? ""), 10);
-  return Number.isInteger(limit) && limit > 0 ? Math.min(10000, limit) : null;
+  return Number.isInteger(limit) && limit >= 0 ? Math.min(10000, limit) : null;
 }
 
 async function setFreeTrialSiteLimit(body = {}) {
@@ -1695,7 +1733,10 @@ async function setFreeTrialSiteLimit(body = {}) {
   const site = getPublicSites().find((entry) => entry.id === siteId);
   if (!site) throw new AdminError("Select a valid site.", 400, "invalid_site");
   const weeklyLimit = normalizeFreeTrialLimit(body.weeklyLimit);
-  const remove = Boolean(body.remove) || !weeklyLimit;
+  const remove = Boolean(body.remove);
+  if (!remove && weeklyLimit === null) {
+    throw new AdminError("Enter a weekly claim limit from 0 to 10,000.", 400, "invalid_trial_limit");
+  }
 
   const client = await pool.connect();
   try {
@@ -1721,7 +1762,7 @@ async function setFreeTrialSiteLimit(body = {}) {
         .map(([id, limit]) => {
           const limitSite = getPublicSites().find((entry) => entry.id === id);
           const normalized = normalizeFreeTrialLimit(limit);
-          return limitSite && normalized ? { siteId: id, siteName: limitSite.name, siteAddress: limitSite.address || "", weeklyLimit: normalized } : null;
+          return limitSite && normalized !== null ? { siteId: id, siteName: limitSite.name, siteAddress: limitSite.address || "", weeklyLimit: normalized } : null;
         })
         .filter(Boolean)
     };

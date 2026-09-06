@@ -1078,6 +1078,7 @@ button.is-pressed::after { opacity: 1; }
   font-weight: 720;
   letter-spacing: .02em;
   caret-color: #22d3ee;
+  text-transform: uppercase;
   box-shadow: inset 0 1px rgba(255,255,255,.025);
 }
 
@@ -1200,6 +1201,25 @@ button.is-pressed::after { opacity: 1; }
 
 .pin-access-links a:hover,
 .pin-access-links a:focus-visible { border-color: rgba(34,211,238,.34); background: rgba(34,211,238,.07); outline: 0; }
+.pin-access-links .pin-buy-link {
+  min-height: 46px;
+  padding: 11px 13px;
+  border-color: rgba(34,211,238,.24);
+  color: #ecfbff;
+  background: linear-gradient(135deg, rgba(34,211,238,.095), rgba(34,211,238,.045));
+  box-shadow: 0 8px 22px rgba(0,0,0,.12);
+  font-size: .74rem;
+  font-weight: 820;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 90ms ease;
+}
+.pin-access-links .pin-buy-link span { color: #67e8f9; font-size: .82rem; }
+.pin-access-links .pin-buy-link:hover,
+.pin-access-links .pin-buy-link:focus-visible {
+  border-color: rgba(34,211,238,.42);
+  background: rgba(34,211,238,.1);
+  box-shadow: 0 10px 26px rgba(34,211,238,.09);
+}
+.pin-access-links .pin-buy-link:active { transform: translateY(1px); }
 .pin-access-links .pin-free-link {
   min-height: 36px;
   justify-content: center;

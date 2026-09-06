@@ -38,7 +38,6 @@ const els = {
   outcomeReassurance: document.getElementById("trialOutcomeReassurance"),
   completionStatus: document.getElementById("trialCompletionStatus"),
   accessOffer: document.getElementById("trialAccessOffer"),
-  offerCopy: document.getElementById("trialOfferCopy"),
   purchaseCta: document.getElementById("trialPurchaseCta"),
   outcomeActions: document.getElementById("trialOutcomeActions"),
   outcomeRetry: document.getElementById("trialOutcomeRetry"),
@@ -95,6 +94,7 @@ const trialSiteSelector = window.CircuitWashSiteSelector.create({
   input: els.search,
   results: els.results,
   spinner: els.searchSpinner,
+  formatAddress: window.CircuitWashSiteSelector.formatAddress,
   currentSiteId: () => currentSite?.id || "",
   onSelect: (site, button, state) => {
     if (state.selected || String(site.id || "") === String(currentSite?.id || "")) closeSiteModal();
@@ -260,8 +260,6 @@ function outcomeContext({ machine = null, cycleKey = "", cycleLabel: label = "",
 
 function renderContinuationPrompt() {
   if (!currentSite) return;
-  const siteName = currentSite.name || "this laundry room";
-  els.offerCopy.textContent = `Get 1-year access for ${siteName} whenever you need another wash.`;
   els.purchaseCta.href = `/pay.html?site=${encodeURIComponent(currentSite.id)}&source=free-trial`;
 }
 
@@ -292,7 +290,8 @@ function showActivationOutcome(state, context = {}) {
     setActivity("Activation pending", details.machineName, "warn");
   } else if (state === "success") {
     els.outcomeTitle.textContent = details.machineName ? `${details.machineName} activated` : "Machine activated";
-    els.outcomeReassurance.textContent = "You’re all set.";
+    els.outcomeReassurance.textContent = "";
+    els.outcomeReassurance.classList.add("hidden");
     els.allowance.textContent = "Free start complete";
     setActivity("Machine activated", details.machineName, "ok");
     renderContinuationPrompt();

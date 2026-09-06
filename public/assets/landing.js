@@ -1,12 +1,9 @@
 const TRIAL_CLAIM_KEY = "zaftFreeTrialClaim";
 const ACTIVATE_SESSION_KEY = "laundryActivateAccessCode";
-const trialEntries = [...document.querySelectorAll("[data-primary-action]")];
-const mobileSticky = document.getElementById("mobileSticky");
-const prominentActions = [...document.querySelectorAll(".hero [data-primary-action], .final-cta [data-primary-action]")];
-const trialStatus = document.getElementById("trialStatus");
-const retryTrialStatus = document.getElementById("retryTrialStatus");
-let prominentActionVisible = true;
-let landingState = { authState: "anonymous", trialEligibility: "unknown", actionKind: "trial" };
+const primaryAction = document.querySelector("[data-primary-action]");
+const paidAccessAction = document.querySelector("[data-paid-access-action]");
+const headerCodeAction = document.querySelector("[data-access-code-entry]");
+let landingState = { authState: "anonymous", trialEligibility: "unknown", actionKind: "wash" };
 
 function hasSavedAccess() {
   try { return Boolean(String(localStorage.getItem(ACTIVATE_SESSION_KEY) || "").trim()); }
@@ -39,48 +36,45 @@ function claimedTrialHref(claim) {
   return token ? `/trial-activate.html#trial=${encodeURIComponent(token)}` : "/trial-activate.html";
 }
 
-function updateHeader(authenticated) {
-  document.querySelectorAll("[data-header-access-label]").forEach((label) => {
-    label.textContent = authenticated ? "Start a wash" : "Have a code?";
-  });
+function setActionVisible(action, visible) {
+  if (!action) return;
+  if (visible) {
+    action.removeAttribute("hidden");
+    action.removeAttribute("aria-hidden");
+    action.tabIndex = 0;
+    return;
+  }
+  action.setAttribute("hidden", "");
+  action.setAttribute("aria-hidden", "true");
+  action.tabIndex = -1;
 }
 
-function setPrimaryAction({ href, label, actionKind, trialEligibility }) {
+function setPrimaryActionResolving() {
+  if (!primaryAction) return;
+  primaryAction.classList.remove("is-navigating");
+  primaryAction.classList.add("is-resolving");
+  primaryAction.setAttribute("aria-busy", "true");
+  primaryAction.setAttribute("aria-disabled", "true");
+  primaryAction.setAttribute("aria-label", "Checking wash options");
+  primaryAction.tabIndex = -1;
+  setActionVisible(paidAccessAction, false);
+  setActionVisible(headerCodeAction, false);
+}
+
+function setPrimaryAction({ href, actionKind, trialEligibility, showPaidAccess = false, showHeaderCode = true }) {
   landingState = { ...landingState, actionKind, trialEligibility };
-  trialEntries.forEach((entry) => {
-    entry.href = href;
-    entry.dataset.actionKind = actionKind;
-    entry.dataset.readyLabel = label;
-    entry.classList.remove("is-loading", "is-unavailable", "is-navigating");
-    entry.removeAttribute("aria-busy");
-    entry.removeAttribute("aria-disabled");
-    entry.removeAttribute("tabindex");
-    const text = entry.querySelector(".button-label");
-    if (text) text.textContent = label;
-  });
-  setTrialStatus("");
-}
-
-function setTrialStatus(message, { retry = false } = {}) {
-  if (!trialStatus) return;
-  const text = trialStatus.querySelector("span");
-  if (text) text.textContent = message;
-  retryTrialStatus?.classList.toggle("hidden", !retry);
-  trialStatus.classList.toggle("hidden", !message && !retry);
-}
-
-function setTrialUnavailable() {
-  landingState = { ...landingState, actionKind: "trial", trialEligibility: "unavailable" };
-  trialEntries.forEach((entry) => {
-    entry.classList.remove("is-loading", "is-navigating");
-    entry.classList.add("is-unavailable");
-    entry.setAttribute("aria-disabled", "true");
-    entry.tabIndex = -1;
-    entry.removeAttribute("aria-busy");
-    const text = entry.querySelector(".button-label");
-    if (text) text.textContent = "Try your first wash free";
-  });
-  setTrialStatus("The free trial could not be checked. Your paid and access-code paths are still available.", { retry: true });
+  if (!primaryAction) return;
+  primaryAction.href = href;
+  primaryAction.dataset.actionKind = actionKind;
+  const label = primaryAction.querySelector("[data-primary-action-label]");
+  if (label) label.textContent = actionKind === "trial" ? "Try your first wash free" : "Start a wash";
+  primaryAction.classList.remove("is-resolving");
+  primaryAction.removeAttribute("aria-busy");
+  primaryAction.removeAttribute("aria-disabled");
+  primaryAction.removeAttribute("aria-label");
+  primaryAction.tabIndex = 0;
+  setActionVisible(paidAccessAction, showPaidAccess);
+  setActionVisible(headerCodeAction, showHeaderCode);
 }
 
 async function freeTrialState(claim) {
@@ -120,31 +114,28 @@ function trackLandingView() {
 }
 
 async function initialiseLanding() {
+  setPrimaryActionResolving();
   const authenticated = hasSavedAccess();
   landingState.authState = authenticated ? "authenticated" : "anonymous";
   document.documentElement.dataset.authState = landingState.authState;
-  updateHeader(authenticated);
 
   if (authenticated) {
-    setPrimaryAction({ href: "/activate.html", label: "Start a wash", actionKind: "wash", trialEligibility: "unknown" });
+    setPrimaryAction({
+      href: "/activate.html",
+      actionKind: "wash",
+      trialEligibility: "unknown",
+      showHeaderCode: false
+    });
     trackLandingView();
     return;
   }
 
   const localClaim = cachedTrialClaim();
   if (localClaim?.used || localClaim?.activatedAt) {
-    setPrimaryAction({ href: "/pay.html", label: "Get an access code", actionKind: "paid-access", trialEligibility: "used" });
+    setPrimaryAction({ href: "/pay.html", actionKind: "paid-access", trialEligibility: "used" });
     trackLandingView();
     return;
   }
-
-  trialEntries.forEach((entry) => {
-    entry.classList.add("is-loading");
-    entry.setAttribute("aria-busy", "true");
-    entry.setAttribute("aria-disabled", "true");
-    entry.tabIndex = -1;
-  });
-  setTrialStatus("");
 
   try {
     const response = await fetch("/.netlify/functions/free-trial", {
@@ -156,35 +147,46 @@ async function initialiseLanding() {
     if (!response.ok) throw new Error("trial_status_failed");
     const data = await response.json();
     if (!data?.enabled) {
-      setPrimaryAction({ href: "/pay.html", label: "Get an access code", actionKind: "paid-access", trialEligibility: "disabled" });
-      setTrialStatus("Free trials are not available right now.");
+      setPrimaryAction({
+        href: "/activate.html",
+        actionKind: "wash",
+        trialEligibility: "disabled",
+        showPaidAccess: true,
+        showHeaderCode: false
+      });
       trackLandingView();
       return;
     }
 
     const state = await freeTrialState(localClaim);
     if (state === "claimed") {
-      setPrimaryAction({ href: claimedTrialHref(localClaim), label: "Continue your free wash", actionKind: "trial", trialEligibility: "claimed" });
+      setPrimaryAction({ href: claimedTrialHref(localClaim), actionKind: "trial", trialEligibility: "claimed" });
     } else if (state === "used") {
-      setPrimaryAction({ href: "/pay.html", label: "Get an access code", actionKind: "paid-access", trialEligibility: "used" });
+      setPrimaryAction({ href: "/pay.html", actionKind: "paid-access", trialEligibility: "used" });
     } else {
-      setPrimaryAction({ href: "/trial.html", label: "Try your first wash free", actionKind: "trial", trialEligibility: "available" });
+      setPrimaryAction({ href: "/trial.html", actionKind: "trial", trialEligibility: "available" });
     }
-    trackLandingView();
   } catch (_) {
-    setTrialUnavailable();
-    trackLandingView();
+    setPrimaryAction({
+      href: "/activate.html",
+      actionKind: "wash",
+      trialEligibility: "unavailable",
+      showPaidAccess: true,
+      showHeaderCode: false
+    });
   }
+
+  trackLandingView();
 }
 
-function beginNavigation(entry, event) {
-  if (entry.classList.contains("is-loading") || entry.classList.contains("is-unavailable") || entry.classList.contains("is-navigating")) {
+function beginNavigation(event) {
+  if (!primaryAction || primaryAction.classList.contains("is-resolving") || primaryAction.classList.contains("is-navigating")) {
     event.preventDefault();
     return;
   }
 
-  const source = entry.dataset.source || "landing";
-  if (entry.dataset.actionKind === "trial") {
+  const source = primaryAction.dataset.source || "landing";
+  if (primaryAction.dataset.actionKind === "trial") {
     window.CircuitWashAnalytics?.track("trial_cta_clicked", {
       source,
       auth_state: landingState.authState,
@@ -194,52 +196,23 @@ function beginNavigation(entry, event) {
 
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
   event.preventDefault();
-  const destination = entry.href;
-  trialEntries.forEach((action) => {
-    action.classList.add("is-navigating");
-    action.setAttribute("aria-disabled", "true");
-    action.tabIndex = -1;
-    const label = action.querySelector(".button-label");
-    if (label) label.textContent = "Starting…";
-  });
-  window.requestAnimationFrame(() => window.setTimeout(() => location.assign(destination), 20));
+  const destination = primaryAction.href;
+  primaryAction.classList.add("is-navigating");
+  const reducedMotion = typeof window.matchMedia === "function"
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const navigationDelay = reducedMotion ? 0 : 90;
+  window.requestAnimationFrame(() => window.setTimeout(() => location.assign(destination), navigationDelay));
 }
 
-trialEntries.forEach((entry) => entry.addEventListener("click", (event) => beginNavigation(entry, event)));
+primaryAction?.addEventListener("click", beginNavigation);
 
 document.querySelectorAll("[data-access-code-entry]").forEach((entry) => entry.addEventListener("click", () => {
   window.CircuitWashAnalytics?.track("access_code_clicked", {
-    source: entry.dataset.source || (entry.closest(".final-cta") ? "final-secondary" : "returning-user-section"),
+    source: entry.dataset.source || "landing",
     auth_state: landingState.authState,
     trial_eligibility: landingState.trialEligibility
   });
 }));
-
-retryTrialStatus?.addEventListener("click", initialiseLanding);
-document.getElementById("currentYear").textContent = new Date().getFullYear();
-
-let stickyQueued = false;
-function updateStickyCta() {
-  const shouldShow = window.scrollY > 360 && !prominentActionVisible;
-  mobileSticky?.classList.toggle("is-visible", shouldShow);
-  mobileSticky?.setAttribute("aria-hidden", shouldShow ? "false" : "true");
-  stickyQueued = false;
-}
-window.addEventListener("scroll", () => {
-  if (stickyQueued) return;
-  stickyQueued = true;
-  window.requestAnimationFrame(updateStickyCta);
-}, { passive: true });
-
-if ("IntersectionObserver" in window) {
-  const visibleActions = new Set();
-  const stickyObserver = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => entry.isIntersecting ? visibleActions.add(entry.target) : visibleActions.delete(entry.target));
-    prominentActionVisible = visibleActions.size > 0;
-    updateStickyCta();
-  }, { threshold: .45 });
-  prominentActions.forEach((cta) => stickyObserver.observe(cta));
-}
 
 window.addEventListener("pageshow", (event) => {
   if (event.persisted) initialiseLanding();
