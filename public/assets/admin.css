@@ -579,7 +579,55 @@ button.ramp-row:hover { background: var(--surface-2); }
 .pill.draft, .pill.cancelled { background: #edf1f4; color: #536270; }
 .pill.sending { background: var(--warning-soft); color: var(--warning); }
 
+/* Paid growth analytics */
+.paid-growth-header { margin-bottom: 12px; }
+.paid-analytics-nav { display: inline-flex; gap: 3px; margin-bottom: 14px; padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: #e9edf1; }
+.paid-analytics-nav button { min-width: 116px; min-height: 34px; padding: 6px 13px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: .7rem; font-weight: 760; cursor: pointer; }
+.paid-analytics-nav button:hover { color: var(--ink); background: rgba(255,255,255,.65); }
+.paid-analytics-nav button.active { color: var(--ink); background: #fff; box-shadow: 0 1px 4px rgba(21,34,46,.1); }
+.paid-analytics-view { min-width: 0; }
+.paid-growth-source { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border: 1px solid #b9d9d4; border-radius: 7px; background: #eef9f7; color: #385e59; font-size: .67rem; }
+.usage-definition { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border: 1px solid #c8d6e3; border-radius: 7px; background: #f1f6fa; color: #486172; font-size: .67rem; }
+.usage-definition .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #3b7196; box-shadow: 0 0 0 3px rgba(59,113,150,.1); }
+.usage-definition strong { color: #285875; }
+.paid-growth-source .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px rgba(35,114,75,.1); }
+.paid-growth-source strong { color: var(--accent-strong); }
+.paid-growth-summary { margin: 13px 0 15px; color: var(--ink); font-size: clamp(.82rem,1.2vw,1rem); font-weight: 680; line-height: 1.5; }
+.growth-error { color: var(--danger); }
+.paid-growth-kpis { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 10px; margin-bottom: 16px; }
+.growth-kpi { min-height: 126px; display: flex; flex-direction: column; align-items: flex-start; padding: 14px; }
+.growth-kpi > span { min-height: 2.4em; color: var(--muted); font-size: .65rem; font-weight: 750; line-height: 1.3; }
+.growth-kpi > strong { margin: 9px 0 7px; color: var(--ink); font-size: clamp(1.5rem,2.25vw,2.2rem); line-height: 1; letter-spacing: -.045em; }
+.growth-kpi > small { margin-top: auto; color: var(--muted); font-size: .58rem; line-height: 1.35; }
+.growth-kpi.primary { border-color: #92c8c0; background: linear-gradient(145deg,#f8fffd,#eaf7f4); }
+.growth-kpi.primary > strong { color: var(--accent-strong); }
+.growth-kpi.footprint { background: linear-gradient(145deg,#fff,#f4f8fa); }
+.paid-market-list { min-height: 159px; display: grid; align-content: start; gap: 7px; }
+.paid-market-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
+.paid-market-row > div { min-width: 0; display: grid; gap: 2px; }
+.paid-market-row > div:last-child { flex: 0 0 auto; text-align: right; }
+.paid-market-row strong { overflow: hidden; font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.paid-market-row small { color: var(--muted); font-size: .58rem; }
+.market-empty { min-height: 140px; display: grid; place-items: center; }
+.paid-performance-panel { margin-bottom: 16px; }
+.growth-history-panel, .paid-market-panel, .usage-history-panel, .usage-performance-panel { margin-bottom: 16px; }
+.growth-history-panel th:nth-child(n+2), .growth-history-panel td:nth-child(n+2), .usage-history-panel th:nth-child(n+2), .usage-history-panel td:nth-child(n+2), .usage-performance-panel th:nth-child(n+2), .usage-performance-panel td:nth-child(n+2) { text-align: right; }
+.growth-history-panel tbody tr:first-child, .usage-history-panel tbody tr:first-child { background: #f5faf9; }
+.usage-performance-panel td:first-child strong { display: block; }
+.paid-performance-panel th:nth-child(n+2), .paid-performance-panel td:nth-child(n+2), .paid-sites-detail th:nth-child(n+3), .paid-sites-detail td:nth-child(n+3) { text-align: right; }
+.paid-performance-panel th:last-child, .paid-performance-panel td:last-child, .paid-sites-detail th:last-child, .paid-sites-detail td:last-child { white-space: nowrap; }
+.table-subline { display: block; margin-top: 2px; color: var(--muted); font-size: .57rem; font-weight: 500; }
+.growth-positive { color: var(--success); font-weight: 780; }
+.paid-sites-detail { padding: 0; overflow: hidden; }
+.paid-sites-detail > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; list-style-position: inside; cursor: pointer; }
+.paid-sites-detail > summary span { display: grid; gap: 2px; }
+.paid-sites-detail > summary strong { font-size: .8rem; }
+.paid-sites-detail > summary small { color: var(--muted); font-size: .62rem; font-weight: 500; }
+.paid-sites-detail[open] > summary { border-bottom: 1px solid var(--line); }
+.paid-sites-detail .table-wrap { border: 0; border-radius: 0; }
+
 @media (max-width: 1180px) {
+  .paid-growth-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .network-kpi-grid, .spread-metric-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .coverage-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .support-data-grid { grid-template-columns: 1fr; }
@@ -625,6 +673,14 @@ button.ramp-row:hover { background: var(--surface-2); }
 }
 
 @media (max-width: 640px) {
+  .paid-growth-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .growth-kpi { min-height: 112px; padding: 12px; }
+  .paid-growth-source { align-items: flex-start; flex-wrap: wrap; }
+  .usage-definition { align-items: flex-start; flex-wrap: wrap; }
+  .paid-growth-source > span:last-child { flex-basis: calc(100% - 18px); margin-left: 14px; }
+  .usage-definition > span:last-child { flex-basis: calc(100% - 18px); margin-left: 14px; }
+  .paid-analytics-nav { width: 100%; }
+  .paid-analytics-nav button { flex: 1; min-width: 0; }
   body { font-size: 13px; }
   .topbar { height: 58px; }
   .mobile-brand strong { display: none; }

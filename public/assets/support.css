@@ -44,6 +44,9 @@ input { min-height: 52px; padding: 0 15px; }
 textarea { min-height: 160px; padding: 14px 15px; line-height: 1.5; resize: vertical; }
 input:focus-visible, textarea:focus-visible { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(34,211,238,.13); }
 textarea::placeholder { color: #64748b; }
+.support-trap { position: absolute !important; left: -10000px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; clip-path: inset(50%) !important; white-space: nowrap !important; }
+.support-turnstile { min-height: 65px; margin-top: 19px; }
+.support-turnstile[hidden] { display: none; }
 .form-message { min-height: 1.4em; margin: 12px 0 8px; color: var(--danger); font-size: .88rem; }
 button, .primary-link { min-height: 56px; border: 0; border-radius: 15px; display: flex; align-items: center; justify-content: center; width: 100%; color: var(--cyan-dark); background: var(--cyan); box-shadow: 0 12px 28px rgba(34,211,238,.16); font-weight: 850; text-decoration: none; cursor: pointer; transition: transform 130ms ease, filter 130ms ease, opacity 130ms ease; }
 button:hover, .primary-link:hover { filter: brightness(1.06); transform: translateY(-1px); }

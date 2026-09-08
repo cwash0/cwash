@@ -9,18 +9,26 @@
   const successEmail = document.getElementById("support-success-email");
   const ticketId = document.getElementById("support-ticket-id");
   const backLink = document.getElementById("support-back");
+  const honeypotInput = document.getElementById("support-company-website");
+  const turnstileContainer = document.getElementById("support-turnstile");
   const EMAIL_KEY = "laundryAccessEmail";
   const PURCHASE_KEY = "laundryAccessPurchase";
   const ACCESS_CODE_KEY = "laundryActivateAccessCode";
   const SESSION_KEY = "laundryAnalyticsSession";
   const SUBMISSION_KEY = "circuitWashSupportSubmission";
+  let formToken = "";
+  let turnstileEnabled = false;
+  let turnstileToken = "";
+  let turnstileWidgetId = null;
 
   configureBackNavigation();
-  prefillEmail();
+  const securityPromise = initialiseBotProtection();
+  securityPromise.then(prefillEmail).catch(() => {});
   track("support_page_viewed", {}, { once: "support-page-viewed" });
   form.addEventListener("submit", submitSupportRequest);
 
   async function prefillEmail() {
+    if (!formToken) return;
     const localEmail = storedEmail();
     if (localEmail) emailInput.value = localEmail;
 
@@ -32,7 +40,7 @@
       const response = await fetch("/.netlify/functions/support-ticket", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "context", accessCode, orderId })
+        body: JSON.stringify({ action: "context", accessCode, orderId, formToken, sessionId: storedValue(sessionStorage, SESSION_KEY) })
       });
       const data = await response.json();
       if (response.ok && data.email && !emailInput.value) emailInput.value = data.email;
@@ -53,6 +61,16 @@
       return;
     }
 
+    await securityPromise;
+    if (!formToken) {
+      errorMessage.textContent = "The security check did not load. Refresh the page and try again.";
+      return;
+    }
+    if (turnstileEnabled && !turnstileToken) {
+      errorMessage.textContent = "Complete the security check before sending your message.";
+      return;
+    }
+
     setLoading(true);
     try {
       const purchase = storedPurchase();
@@ -63,6 +81,9 @@
           action: "submit",
           email,
           message,
+          companyWebsite: honeypotInput?.value || "",
+          formToken,
+          turnstileToken,
           idempotencyKey: submissionKey(),
           accessCode: storedValue(localStorage, ACCESS_CODE_KEY) || String(purchase?.code || "").trim(),
           orderId: String(purchase?.orderId || "").trim(),
@@ -83,10 +104,87 @@
       successView.hidden = false;
       successView.focus();
     } catch (error) {
+      resetTurnstile();
       errorMessage.textContent = error.message || "We couldn’t send your message. Please try again.";
     } finally {
       setLoading(false);
     }
+  }
+
+  async function initialiseBotProtection() {
+    try {
+      const response = await fetch("/.netlify/functions/support-ticket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "config" })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok || !data.formToken) throw new Error("security_unavailable");
+      formToken = String(data.formToken);
+      turnstileEnabled = Boolean(data.turnstile?.enabled && data.turnstile?.siteKey);
+      if (turnstileEnabled) await mountTurnstile(String(data.turnstile.siteKey));
+    } catch (_) {
+      formToken = "";
+      turnstileEnabled = false;
+    }
+  }
+
+  function mountTurnstile(siteKey) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timeoutId = window.setTimeout(() => fail(new Error("turnstile_timeout")), 10000);
+      const finish = () => {
+        if (settled) return false;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        return true;
+      };
+      const fail = (error) => {
+        if (!finish()) return;
+        reject(error instanceof Error ? error : new Error("turnstile_unavailable"));
+      };
+      const render = () => {
+        if (settled) return;
+        if (!window.turnstile || !turnstileContainer) return fail(new Error("turnstile_unavailable"));
+        try {
+          turnstileContainer.hidden = false;
+          turnstileWidgetId = window.turnstile.render(turnstileContainer, {
+            sitekey: siteKey,
+            action: "support_submit",
+            theme: "dark",
+            size: "flexible",
+            callback: (token) => { turnstileToken = String(token || ""); },
+            "expired-callback": () => { turnstileToken = ""; },
+            "timeout-callback": () => { turnstileToken = ""; },
+            "error-callback": () => { turnstileToken = ""; }
+          });
+        } catch (error) {
+          return fail(error);
+        }
+        if (finish()) resolve();
+      };
+      if (window.turnstile) return render();
+      const existing = document.getElementById("support-turnstile-script");
+      if (existing) {
+        existing.addEventListener("load", render, { once: true });
+        existing.addEventListener("error", fail, { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.id = "support-turnstile-script";
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.addEventListener("load", render, { once: true });
+      script.addEventListener("error", fail, { once: true });
+      document.head.appendChild(script);
+    });
+  }
+
+  function resetTurnstile() {
+    if (!turnstileEnabled || turnstileWidgetId === null || !window.turnstile) return;
+    turnstileToken = "";
+    try { window.turnstile.reset(turnstileWidgetId); } catch (_) {}
   }
 
   function storedEmail() {

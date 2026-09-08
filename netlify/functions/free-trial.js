@@ -80,6 +80,7 @@ async function ensureSchema() {
       id bigserial primary key,
       browser_token_hash char(64) unique not null,
       site_id text not null,
+      customer_email text,
       trial_token_hash char(64) unique,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
@@ -93,6 +94,7 @@ async function ensureSchema() {
   await pool.query(`
     alter table free_trial_claims
       add column if not exists trial_token_hash char(64),
+      add column if not exists customer_email text,
       add column if not exists updated_at timestamptz not null default now(),
       add column if not exists activated_at timestamptz,
       add column if not exists activation_machine_id text,
@@ -118,6 +120,7 @@ async function isTrialEnabled(db = pool) {
 
 async function claimTrial(body = {}) {
   const site = requireSite(body.siteId);
+  const customerEmail = validateCustomerEmail(body.customerEmail);
   const browserToken = validateBrowserToken(body.browserToken);
   const browserTokenHash = hashToken(browserToken);
   const trialToken = crypto.randomBytes(32).toString("base64url");
@@ -146,12 +149,13 @@ async function claimTrial(body = {}) {
       await assertTrialSiteAvailable(client, site.id, claim.id);
       await client.query(`
         update free_trial_claims
-        set site_id = $2, trial_token_hash = $3, updated_at = now()
+        set site_id = $2, trial_token_hash = $3, customer_email = $4, updated_at = now()
         where id = $1
-      `, [claim.id, site.id, trialTokenHash]);
+      `, [claim.id, site.id, trialTokenHash, customerEmail]);
       await client.query("commit");
       return {
         trialToken,
+        email: customerEmail,
         site: publicSite(site),
         activationUrl: "/trial-activate.html"
       };
@@ -160,12 +164,13 @@ async function claimTrial(body = {}) {
 
     await client.query(`
       insert into free_trial_claims
-        (browser_token_hash, site_id, trial_token_hash, created_at, updated_at)
-      values ($1, $2, $3, now(), now())
-    `, [browserTokenHash, site.id, trialTokenHash]);
+        (browser_token_hash, site_id, customer_email, trial_token_hash, created_at, updated_at)
+      values ($1, $2, $3, $4, now(), now())
+    `, [browserTokenHash, site.id, customerEmail, trialTokenHash]);
     await client.query("commit");
     return {
       trialToken,
+      email: customerEmail,
       site: publicSite(site),
       activationUrl: "/trial-activate.html"
     };
@@ -206,7 +211,7 @@ async function changeTrialSite(body = {}) {
     await client.query("begin");
     await lockTrialSiteLimit(client, site.id);
     const existing = await client.query(`
-      select id, site_id, created_at, activated_at,
+      select id, site_id, customer_email, created_at, activated_at,
              activation_machine_id, activation_cycle_key, activation_status, activation_prepared_at
       from free_trial_claims
       where trial_token_hash = $1
@@ -221,7 +226,7 @@ async function changeTrialSite(body = {}) {
       update free_trial_claims
       set site_id = $2, updated_at = now()
       where id = $1
-      returning id, site_id, created_at, activated_at,
+       returning id, site_id, customer_email, created_at, activated_at,
                 activation_machine_id, activation_cycle_key, activation_status, activation_prepared_at
     `, [claim.id, site.id]);
     await client.query("commit");
@@ -296,7 +301,7 @@ async function completeTrialActivation(body = {}) {
     update free_trial_claims
     set activated_at = now(), activation_status = 'accepted', updated_at = now()
     where trial_token_hash = $1 and activated_at is null
-    returning id, site_id, created_at, activated_at,
+    returning id, site_id, customer_email, created_at, activated_at,
               activation_machine_id, activation_cycle_key, activation_status, activation_prepared_at
   `, [tokenHash]);
   if (result.rows.length) return trialSessionPayload(result.rows[0]);
@@ -309,7 +314,7 @@ async function completeTrialActivation(body = {}) {
 async function findTrial(rawToken) {
   const tokenHash = validateTrialToken(rawToken);
   const result = await pool.query(`
-    select id, site_id, created_at, activated_at,
+    select id, site_id, customer_email, created_at, activated_at,
            activation_machine_id, activation_cycle_key, activation_status, activation_prepared_at
     from free_trial_claims
     where trial_token_hash = $1
@@ -328,6 +333,7 @@ function trialSessionPayload(claim) {
   const machines = sanitizeMachines(entry.machines);
   return {
     site: publicSite(site),
+    email: String(claim.customer_email || "").trim().toLowerCase(),
     machines,
     used: Boolean(claim.activated_at),
     remaining: claim.activated_at ? 0 : 1,
@@ -421,6 +427,14 @@ function validateBrowserToken(rawToken) {
     throw new TrialError("Refresh the page and try again.", 400, "invalid_browser_token");
   }
   return token;
+}
+
+function validateCustomerEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new TrialError("Enter a valid email address to continue.", 400, "invalid_email");
+  }
+  return email;
 }
 
 function validateTrialToken(rawToken) {

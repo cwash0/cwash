@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex,nofollow" />
   <title>Contact support | CircuitWash</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/support.css" />
+  <link rel="stylesheet" href="assets/support.css?v=abuse-1" />
 </head>
 <body>
   <main class="support-page">
@@ -29,6 +29,13 @@
           <label for="support-message">Message</label>
           <textarea id="support-message" name="message" rows="7" minlength="10" maxlength="10000" required placeholder="Tell us what happened."></textarea>
 
+          <div class="support-trap" aria-hidden="true">
+            <label for="support-company-website">Company website</label>
+            <input id="support-company-website" name="companyWebsite" type="text" tabindex="-1" autocomplete="off" />
+          </div>
+
+          <div id="support-turnstile" class="support-turnstile" hidden></div>
+
           <p id="support-error" class="form-message" role="alert" aria-live="polite"></p>
           <button id="support-submit" type="submit"><span class="button-label">Send message</span><span class="button-spinner" aria-hidden="true"></span></button>
         </form>
@@ -44,6 +51,6 @@
     </section>
   </main>
   <script src="assets/funnel-analytics.js"></script>
-  <script src="assets/support.js?v=back-navigation-1"></script>
+  <script src="assets/support.js?v=abuse-1"></script>
 </body>
 </html>

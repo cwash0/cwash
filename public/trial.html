@@ -8,7 +8,9 @@
   <meta name="description" content="Try your first CircuitWash machine activation free." />
   <title>Try your first wash free | CircuitWash</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/trial.css?v=free-search-11" />
+  <link rel="stylesheet" href="assets/payment-sheet.css?v=payment-methods-2" />
+  <link rel="stylesheet" href="assets/trial.css?v=site-full-consistency-1" />
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
   <main class="page">
@@ -45,10 +47,21 @@
           </div>
         </div>
         <div class="state-actions">
-          <a id="trialSiteFullBuy" class="button" href="/pay.html?source=free-trial-full">Buy 1-year access <span aria-hidden="true">&rarr;</span></a>
-          <button id="trialSiteFullBack" class="button secondary" type="button">Try another site</button>
+          <button id="trialSiteFullBuy" class="button" type="button">Buy 1-year access <span aria-hidden="true">&rarr;</span></button>
+          <a id="trialSiteFullBack" class="button secondary" href="/">Maybe later</a>
         </div>
-        <p class="support-note trial-site-full-support">Need a hand? <a href="/support.html?source=%2Ftrial.html">Contact support</a></p>
+        <p id="trialSiteFullCheckoutMessage" class="trial-site-full-checkout-message" aria-live="polite"></p>
+
+        <div id="trialSiteFullPurchaseResult" class="trial-site-full-purchase-result hidden" aria-live="polite">
+          <p class="trial-state-label">YOUR 1-YEAR ACCESS CODE</p>
+          <h2>Access ready</h2>
+          <button id="trialSiteFullPurchasedCode" class="trial-site-full-purchased-code" type="button" aria-label="Copy access code">
+            <strong id="trialSiteFullPurchasedCodeValue"></strong>
+            <span id="trialSiteFullPurchasedCodeHint">Tap to copy</span>
+          </button>
+          <p id="trialSiteFullPurchaseEmailStatus" class="trial-site-full-purchase-email-status"></p>
+          <a class="button trial-site-full-use-code" href="/activate.html">Use access code</a>
+        </div>
       </div>
 
       <section id="trialFormPanel" class="trial-form-panel hidden" aria-labelledby="siteHeading">
@@ -107,12 +120,36 @@
           </div>
         </div>
       </section>
-    </section>
 
-    <p class="support-note">Stuck? <a href="/support.html?source=%2Ftrial.html">Contact support</a></p>
+      <section id="trialEmailPanel" class="trial-email-panel hidden" aria-labelledby="trialEmailHeading">
+        <div class="section-title-row">
+          <h2 id="trialEmailHeading">What&rsquo;s your email?</h2>
+        </div>
+
+        <div id="trialEmailSite" class="selected-site trial-email-site" aria-live="polite"></div>
+
+        <form id="trialEmailForm" class="trial-email-form" novalidate>
+          <label for="trialEmail">Email address</label>
+          <input
+            id="trialEmail"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            maxlength="320"
+            placeholder="you@example.com"
+            aria-describedby="trialEmailMessage"
+            required
+          />
+          <p id="trialEmailMessage" class="trial-message" aria-live="polite"></p>
+          <button id="trialEmailContinue" class="button" type="submit">Continue to your free wash <span aria-hidden="true">&rarr;</span></button>
+        </form>
+      </section>
+    </section>
   </main>
 
+  <div id="trialSiteFullPaymentHost"></div>
+
   <script src="assets/funnel-analytics.js"></script>
-  <script src="assets/trial.js?v=free-search-11"></script>
+  <script src="assets/trial.js?v=checkout-ready-2"></script>
 </body>
 </html>

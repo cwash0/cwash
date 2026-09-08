@@ -18,6 +18,8 @@ let orderSearchTerm = "";
 let codesData = [];
 let promosData = [];
 let analyticsData = null;
+let usageAnalyticsData = null;
+let paidAnalyticsView = "growth";
 let analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
 let analyticsView = "overview";
 let selectedAnalyticsCity = "";
@@ -47,6 +49,8 @@ const els = {
   metricActivations: $("metricActivations"), metricSupport: $("metricSupport"), metricSupportSub: $("metricSupportSub"), trendChart: $("trendChart"),
   recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), orderTypeBreakdown: $("orderTypeBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
   reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsRange: $("analyticsRange"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsPeriodMetric: $("analyticsPeriodMetric"), analyticsPeriodSub: $("analyticsPeriodSub"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsNoOrderSub: $("analyticsNoOrderSub"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsDataQuality: $("analyticsDataQuality"), analyticsTrendSummary: $("analyticsTrendSummary"), analyticsDemandTrend: $("analyticsDemandTrend"), analyticsActivationTrend: $("analyticsActivationTrend"), analyticsTopSites: $("analyticsTopSites"), analyticsTopSearches: $("analyticsTopSearches"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), analyticsHitsPageStatus: $("analyticsHitsPageStatus"), analyticsHitsPrev: $("analyticsHitsPrev"), analyticsHitsNext: $("analyticsHitsNext"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
+  growthRange: $("growthRange"), refreshGrowthBtn: $("refreshGrowthBtn"), paidGrowthSummary: $("paidGrowthSummary"), paidCustomersMetric: $("paidCustomersMetric"), paidCustomersSub: $("paidCustomersSub"), newPaidCustomersMetric: $("newPaidCustomersMetric"), newPaidCustomersSub: $("newPaidCustomersSub"), paidRevenueMetric: $("paidRevenueMetric"), paidRevenueSub: $("paidRevenueSub"), paidOrdersMetric: $("paidOrdersMetric"), paidOrdersSub: $("paidOrdersSub"), paidCitiesMetric: $("paidCitiesMetric"), paidCitiesSub: $("paidCitiesSub"), paidSitesMetric: $("paidSitesMetric"), paidSitesSub: $("paidSitesSub"), growthHistorySummary: $("growthHistorySummary"), growthHistoryRows: $("growthHistoryRows"), newPaidMarkets: $("newPaidMarkets"), cityPerformanceCount: $("cityPerformanceCount"), paidCityRows: $("paidCityRows"), paidSiteRows: $("paidSiteRows"),
+  usageAnalyticsSummary: $("usageAnalyticsSummary"), totalActivationsMetric: $("totalActivationsMetric"), periodActivationsMetric: $("periodActivationsMetric"), usageCitiesMetric: $("usageCitiesMetric"), usageCitiesSub: $("usageCitiesSub"), usageSitesMetric: $("usageSitesMetric"), usageSitesSub: $("usageSitesSub"), paidActivationsMetric: $("paidActivationsMetric"), paidActivationsSub: $("paidActivationsSub"), trialActivationsMetric: $("trialActivationsMetric"), trialActivationsSub: $("trialActivationsSub"), usageHistoryRows: $("usageHistoryRows"), usageCityCount: $("usageCityCount"), usageCityRows: $("usageCityRows"), usageSiteCount: $("usageSiteCount"), usageSiteRows: $("usageSiteRows"),
   networkOverviewSummary: $("networkOverviewSummary"), networkActiveUsers: $("networkActiveUsers"), networkActiveUsersDelta: $("networkActiveUsersDelta"), networkNewUsers: $("networkNewUsers"), networkNewUsersDelta: $("networkNewUsersDelta"), networkRepresentedCities: $("networkRepresentedCities"), networkNewCities: $("networkNewCities"), networkNewCitiesDelta: $("networkNewCitiesDelta"), networkActivatedCities: $("networkActivatedCities"), networkActivatedSample: $("networkActivatedSample"), networkActivationRate: $("networkActivationRate"), networkActivationDelta: $("networkActivationDelta"),
   spreadBalance: $("spreadBalance"), breadthDepthSummary: $("breadthDepthSummary"), cityLifecycleStrip: $("cityLifecycleStrip"), cityCoverageSummary: $("cityCoverageSummary"), cityLocationCoverage: $("cityLocationCoverage"), cityCoverageTrend: $("cityCoverageTrend"), cityLifecycleFunnel: $("cityLifecycleFunnel"), newCitiesList: $("newCitiesList"),
   observedSpreadRate: $("observedSpreadRate"), observedSpreadRateDelta: $("observedSpreadRateDelta"), boundaryCrossingRatio: $("boundaryCrossingRatio"), boundaryCrossingDelta: $("boundaryCrossingDelta"), cityTakeoffRate: $("cityTakeoffRate"), medianSecondUser: $("medianSecondUser"), medianSecondUserDelta: $("medianSecondUserDelta"), medianActivation: $("medianActivation"), medianSeedInterval: $("medianSeedInterval"), medianSeedIntervalDelta: $("medianSeedIntervalDelta"), newCitySeedTrend: $("newCitySeedTrend"), growthBalanceTrend: $("growthBalanceTrend"), cityRampCurves: $("cityRampCurves"), cityBenchmarks: $("cityBenchmarks"), cityCoverageRows: $("cityCoverageRows"), existingCityGrowthRows: $("existingCityGrowthRows"), cityDepthDistribution: $("cityDepthDistribution"), cityMigrations: $("cityMigrations"), cityConcentration: $("cityConcentration"), cityCohortRows: $("cityCohortRows"),
@@ -184,7 +188,7 @@ function openTab(tab) {
   if (location.hash !== `#${tab}`) history.replaceState(null, "", `#${tab}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
   if (tab === "dashboard") loadDashboard();
-  if (tab === "analytics") loadAnalytics();
+  if (tab === "analytics") loadCurrentAnalyticsView();
   if (tab === "orders") loadOrders();
   if (tab === "codes") loadCodes();
   if (tab === "promos") loadPromos();
@@ -195,7 +199,7 @@ function openTab(tab) {
 
 async function refreshActive() {
   if (activeTab === "dashboard") await loadDashboard();
-  else if (activeTab === "analytics") await loadAnalytics();
+  else if (activeTab === "analytics") await loadCurrentAnalyticsView();
   else if (activeTab === "orders") await loadOrders();
   else if (activeTab === "codes") await loadCodes();
   else if (activeTab === "promos") await loadPromos();
@@ -862,6 +866,301 @@ function renderAnalyticsHits(hits) {
     appendCell(tr, titleCase(hit.searchMode || "—"));
     appendCell(tr, hit.referrer || "Direct");
     els.analyticsHitsBody.appendChild(tr);
+  });
+}
+
+function loadCurrentAnalyticsView() {
+  return paidAnalyticsView === "usage" ? loadUsageAnalytics() : loadPaidGrowth();
+}
+
+function openPaidAnalyticsView(view) {
+  paidAnalyticsView = view === "usage" ? "usage" : "growth";
+  document.querySelectorAll("[data-paid-analytics-view]").forEach((button) => button.classList.toggle("active", button.dataset.paidAnalyticsView === paidAnalyticsView));
+  $("paidGrowthView").classList.toggle("hidden", paidAnalyticsView !== "growth");
+  $("usageAnalyticsView").classList.toggle("hidden", paidAnalyticsView !== "usage");
+  loadCurrentAnalyticsView();
+}
+
+async function loadPaidGrowth() {
+  setPaidGrowthLoading();
+  try {
+    analyticsData = await api("analytics", { periodDays: selectedPaidGrowthPeriod() });
+    renderPaidGrowth(analyticsData);
+  } catch (error) {
+    const message = escapeHtml(error.message || "Unable to load paid growth.");
+    els.paidGrowthSummary.innerHTML = `<span class="growth-error">${message}</span>`;
+    els.growthHistoryRows.innerHTML = `<tr><td colspan="8" class="muted">${message}</td></tr>`;
+    els.paidCityRows.innerHTML = `<tr><td colspan="7" class="muted">${message}</td></tr>`;
+    els.paidSiteRows.innerHTML = `<tr><td colspan="7" class="muted">${message}</td></tr>`;
+  }
+}
+
+function selectedPaidGrowthPeriod() {
+  return els.growthRange.value === "all" ? "all" : Number(els.growthRange.value) || 30;
+}
+
+function setPaidGrowthLoading() {
+  els.paidGrowthSummary.textContent = "Loading paid growth…";
+  els.newPaidMarkets.innerHTML = '<div class="analytics-empty">Loading paid locations…</div>';
+  els.growthHistoryRows.innerHTML = '<tr><td colspan="8" class="muted">Loading growth history…</td></tr>';
+  els.paidCityRows.innerHTML = '<tr><td colspan="7" class="muted">Loading paid cities…</td></tr>';
+  els.paidSiteRows.innerHTML = '<tr><td colspan="7" class="muted">Loading paid sites…</td></tr>';
+}
+
+function renderPaidGrowth(data) {
+  const summary = data.summary || {};
+  const comparison = data.comparison || {};
+  const currency = summary.currency || "GBP";
+  const allTime = data.meta?.periodKey === "all";
+  const periodLabel = allTime ? "All time" : `Last ${Number(data.meta?.periodDays) || 30} days`;
+
+  els.paidCustomersMetric.textContent = formatNumber(summary.totalCustomers);
+  els.paidCustomersSub.textContent = `${formatSignedCount(summary.newCustomers)} in ${periodLabel.toLowerCase()}`;
+  els.newPaidCustomersMetric.textContent = formatNumber(summary.newCustomers);
+  els.newPaidCustomersSub.textContent = comparisonText(summary.newCustomers, comparison.newCustomers, allTime);
+  els.paidRevenueMetric.textContent = money(summary.periodRevenue, currency);
+  els.paidRevenueSub.textContent = comparisonText(summary.periodRevenue, comparison.revenue, allTime, true, currency);
+  els.paidOrdersMetric.textContent = formatNumber(summary.periodOrders);
+  els.paidOrdersSub.textContent = comparisonText(summary.periodOrders, comparison.orders, allTime);
+  els.paidCitiesMetric.textContent = formatNumber(summary.totalCities);
+  els.paidCitiesSub.textContent = `${formatSignedCount(summary.newCities)} first paid in this window`;
+  els.paidSitesMetric.textContent = formatNumber(summary.totalSites);
+  els.paidSitesSub.textContent = `${formatSignedCount(summary.newSites)} first paid in this window`;
+
+  const missingCustomers = Number(summary.ordersWithoutCustomer) || 0;
+  const excludedOrders = Number(summary.excludedOrders) || 0;
+  const qualityNote = missingCustomers || excludedOrders
+    ? ` ${formatNumber(missingCustomers)} paid order${missingCustomers === 1 ? " has" : "s have"} no customer email; ${formatNumber(excludedOrders)} paid order${excludedOrders === 1 ? " is" : "s are"} outside mapped production sites.`
+    : "";
+  els.paidGrowthSummary.textContent = Number(summary.periodOrders)
+    ? `${formatNumber(summary.newCustomers)} new paid customer${Number(summary.newCustomers) === 1 ? "" : "s"} generated ${money(summary.periodRevenue, currency)} in ${periodLabel.toLowerCase()}. The business now reaches ${formatNumber(summary.totalCities)} paying ${Number(summary.totalCities) === 1 ? "city" : "cities"} through ${formatNumber(summary.totalSites)} paid ${Number(summary.totalSites) === 1 ? "site" : "sites"}.${qualityNote}`
+    : `No positive-value completed orders were recorded in ${periodLabel.toLowerCase()}. Lifetime reach remains ${formatNumber(summary.totalCustomers)} paid customers across ${formatNumber(summary.totalCities)} cities.${qualityNote}`;
+
+  const trend = data.trend || [];
+  els.growthHistorySummary.textContent = `${formatNumber(summary.newCustomers)} first-time customers, ${formatNumber(summary.newCities)} new cities, and ${formatNumber(summary.newSites)} new sites in ${periodLabel.toLowerCase()}.`;
+  renderGrowthHistory(trend, currency);
+  renderNewPaidMarkets(data.cities || [], periodLabel);
+  renderPaidCityRows(data.cities || [], currency);
+  renderPaidSiteRows(data.sites || [], currency);
+}
+
+function renderGrowthHistory(points, currency) {
+  els.growthHistoryRows.replaceChildren();
+  const rows = points.slice().reverse().slice(0, 36);
+  if (!rows.length) {
+    els.growthHistoryRows.innerHTML = '<tr><td colspan="8" class="muted">No paid growth history yet.</td></tr>';
+    return;
+  }
+  rows.forEach((point) => {
+    const tr = document.createElement("tr");
+    appendCell(tr, formatGrowthPeriod(point.date));
+    appendCell(tr, formatNumber(point.newCustomers));
+    appendCell(tr, formatNumber(point.orders));
+    appendCell(tr, money(point.revenue, currency));
+    appendCell(tr, formatSignedCount(point.newCities), Number(point.newCities) > 0 ? "growth-positive" : "muted");
+    appendCell(tr, formatSignedCount(point.newSites), Number(point.newSites) > 0 ? "growth-positive" : "muted");
+    appendCell(tr, formatNumber(point.totalCities));
+    appendCell(tr, formatNumber(point.totalSites));
+    els.growthHistoryRows.appendChild(tr);
+  });
+}
+
+function formatGrowthPeriod(value) {
+  const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return String(value || "");
+  return date.toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" });
+}
+
+async function loadUsageAnalytics() {
+  setUsageLoading();
+  try {
+    usageAnalyticsData = await api("usage_analytics", { periodDays: selectedPaidGrowthPeriod() });
+    renderUsageAnalytics(usageAnalyticsData);
+  } catch (error) {
+    const message = escapeHtml(error.message || "Unable to load usage analytics.");
+    els.usageAnalyticsSummary.innerHTML = `<span class="growth-error">${message}</span>`;
+    els.usageHistoryRows.innerHTML = `<tr><td colspan="6" class="muted">${message}</td></tr>`;
+    els.usageCityRows.innerHTML = `<tr><td colspan="8" class="muted">${message}</td></tr>`;
+    els.usageSiteRows.innerHTML = `<tr><td colspan="8" class="muted">${message}</td></tr>`;
+  }
+}
+
+function setUsageLoading() {
+  els.usageAnalyticsSummary.textContent = "Loading activation usage…";
+  els.usageHistoryRows.innerHTML = '<tr><td colspan="6" class="muted">Loading usage history…</td></tr>';
+  els.usageCityRows.innerHTML = '<tr><td colspan="8" class="muted">Loading city usage…</td></tr>';
+  els.usageSiteRows.innerHTML = '<tr><td colspan="8" class="muted">Loading site usage…</td></tr>';
+}
+
+function renderUsageAnalytics(data) {
+  const summary = data.summary || {};
+  const allTime = data.meta?.periodKey === "all";
+  const periodLabel = allTime ? "All time" : `Last ${Number(data.meta?.periodDays) || 30} days`;
+  els.totalActivationsMetric.textContent = formatNumber(summary.totalActivations);
+  els.periodActivationsMetric.textContent = formatNumber(summary.periodActivations);
+  els.usageCitiesMetric.textContent = formatNumber(summary.totalCities);
+  els.usageCitiesSub.textContent = `${formatNumber(summary.periodCities)} used in this window`;
+  els.usageSitesMetric.textContent = formatNumber(summary.totalSites);
+  els.usageSitesSub.textContent = `${formatNumber(summary.periodSites)} used in this window`;
+  els.paidActivationsMetric.textContent = formatNumber(summary.periodPaidActivations);
+  els.paidActivationsSub.textContent = `${formatNumber(summary.paidActivations)} all time`;
+  els.trialActivationsMetric.textContent = formatNumber(summary.periodTrialActivations);
+  els.trialActivationsSub.textContent = `${formatNumber(summary.trialActivations)} all time`;
+  els.usageAnalyticsSummary.textContent = Number(summary.periodActivations)
+    ? `${formatNumber(summary.periodActivations)} activations were recorded in ${periodLabel.toLowerCase()} across ${formatNumber(summary.periodSites)} sites and ${formatNumber(summary.periodCities)} cities. ${formatNumber(summary.periodPaidActivations)} came from customer access codes, ${formatNumber(summary.periodTrialActivations)} from free trials, and ${formatNumber(summary.periodOtherActivations)} from admin or other codes.`
+    : `No activations were recorded in ${periodLabel.toLowerCase()}. All-time usage is ${formatNumber(summary.totalActivations)} activations across ${formatNumber(summary.totalSites)} sites.`;
+  renderUsageHistory(data.history || []);
+  renderUsageCityRows(data.cities || []);
+  renderUsageSiteRows(data.sites || []);
+}
+
+function renderUsageHistory(history) {
+  els.usageHistoryRows.replaceChildren();
+  if (!history.length) {
+    els.usageHistoryRows.innerHTML = '<tr><td colspan="6" class="muted">No activation history yet.</td></tr>';
+    return;
+  }
+  history.forEach((period) => {
+    const tr = document.createElement("tr");
+    appendCell(tr, formatGrowthPeriod(period.period));
+    appendCell(tr, formatNumber(period.totalActivations));
+    appendCell(tr, formatNumber(period.paidActivations));
+    appendCell(tr, formatNumber(period.trialActivations));
+    appendCell(tr, formatNumber(period.otherActivations));
+    appendCell(tr, formatNumber(period.sitesUsed));
+    els.usageHistoryRows.appendChild(tr);
+  });
+}
+
+function renderUsageCityRows(cities) {
+  els.usageCityRows.replaceChildren();
+  els.usageCityCount.textContent = `${formatNumber(cities.length)} ${cities.length === 1 ? "city" : "cities"}`;
+  if (!cities.length) {
+    els.usageCityRows.innerHTML = '<tr><td colspan="8" class="muted">No city has recorded an activation yet.</td></tr>';
+    return;
+  }
+  cities.forEach((city) => {
+    const tr = document.createElement("tr");
+    const cityCell = document.createElement("td");
+    const name = document.createElement("strong"); name.textContent = city.city;
+    const region = document.createElement("small"); region.className = "table-subline"; region.textContent = city.region || "Other";
+    cityCell.append(name, region); tr.appendChild(cityCell);
+    appendCell(tr, formatNumber(city.sitesUsed));
+    appendCell(tr, formatNumber(city.totalActivations));
+    appendCell(tr, formatNumber(city.periodActivations));
+    appendCell(tr, formatNumber(city.periodPaidActivations));
+    appendCell(tr, formatNumber(city.periodTrialActivations));
+    appendCell(tr, formatNumber(city.periodActiveCodes));
+    appendCell(tr, formatDate(city.lastUsedAt));
+    els.usageCityRows.appendChild(tr);
+  });
+}
+
+function renderUsageSiteRows(sites) {
+  els.usageSiteRows.replaceChildren();
+  els.usageSiteCount.textContent = `${formatNumber(sites.length)} used ${sites.length === 1 ? "site" : "sites"}`;
+  if (!sites.length) {
+    els.usageSiteRows.innerHTML = '<tr><td colspan="8" class="muted">No site has recorded an activation yet.</td></tr>';
+    return;
+  }
+  sites.forEach((site) => {
+    const tr = document.createElement("tr");
+    appendCell(tr, site.siteName || site.siteId);
+    appendCell(tr, site.city || "—");
+    appendCell(tr, formatNumber(site.totalActivations));
+    appendCell(tr, formatNumber(site.periodActivations));
+    appendCell(tr, formatNumber(site.periodPaidActivations));
+    appendCell(tr, formatNumber(site.periodTrialActivations));
+    appendCell(tr, formatNumber(site.periodActiveCodes));
+    appendCell(tr, formatDate(site.lastUsedAt));
+    els.usageSiteRows.appendChild(tr);
+  });
+}
+
+function comparisonText(current, previous, allTime, asMoney = false, currency = "GBP") {
+  if (allTime) return "All-time total";
+  const now = Number(current) || 0;
+  const before = Number(previous) || 0;
+  const difference = now - before;
+  const formatted = asMoney ? money(Math.abs(difference), currency) : formatNumber(Math.abs(difference));
+  if (!before) return now ? "New activity; previous period was zero" : "No change from previous period";
+  const percent = Math.abs(difference / before * 100).toFixed(0);
+  if (!difference) return "No change from previous period";
+  return `${difference > 0 ? "+" : "−"}${formatted} (${difference > 0 ? "+" : "−"}${percent}%) vs previous period`;
+}
+
+function formatSignedCount(value) {
+  const count = Number(value) || 0;
+  return `${count > 0 ? "+" : ""}${formatNumber(count)}`;
+}
+
+function renderNewPaidMarkets(cities, periodLabel) {
+  els.newPaidMarkets.replaceChildren();
+  const markets = cities.filter((city) => isDateInSelectedGrowthPeriod(city.firstPaidAt));
+  if (!markets.length) {
+    els.newPaidMarkets.innerHTML = `<div class="analytics-empty market-empty">No new paid cities in ${escapeHtml(periodLabel.toLowerCase())}. Growth came from existing markets.</div>`;
+    return;
+  }
+  markets.slice(0, 8).forEach((city) => {
+    const row = document.createElement("div");
+    row.className = "paid-market-row";
+    const identity = document.createElement("div");
+    const name = document.createElement("strong"); name.textContent = city.city;
+    const region = document.createElement("small"); region.textContent = `${city.region || "Other"} · first paid ${formatDate(city.firstPaidAt)}`;
+    identity.append(name, region);
+    const totals = document.createElement("div");
+    totals.innerHTML = `<strong>${formatNumber(city.paidCustomers)} customers</strong><small>${formatNumber(city.paidSites)} paid ${Number(city.paidSites) === 1 ? "site" : "sites"}</small>`;
+    row.append(identity, totals);
+    els.newPaidMarkets.appendChild(row);
+  });
+}
+
+function isDateInSelectedGrowthPeriod(value) {
+  if (!value) return false;
+  if (selectedPaidGrowthPeriod() === "all") return true;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp >= Date.now() - Number(selectedPaidGrowthPeriod()) * 86400000;
+}
+
+function renderPaidCityRows(cities, currency) {
+  els.paidCityRows.replaceChildren();
+  els.cityPerformanceCount.textContent = `${formatNumber(cities.length)} paying ${cities.length === 1 ? "city" : "cities"}`;
+  if (!cities.length) {
+    els.paidCityRows.innerHTML = '<tr><td colspan="7" class="muted">No cities have a completed positive-value order yet.</td></tr>';
+    return;
+  }
+  cities.forEach((city) => {
+    const tr = document.createElement("tr");
+    const cityCell = document.createElement("td");
+    const cityName = document.createElement("strong"); cityName.textContent = city.city;
+    const region = document.createElement("small"); region.className = "table-subline"; region.textContent = city.region || "Other";
+    cityCell.append(cityName, region); tr.appendChild(cityCell);
+    appendCell(tr, formatNumber(city.paidSites));
+    appendCell(tr, formatNumber(city.paidCustomers));
+    appendCell(tr, formatSignedCount(city.newCustomers), Number(city.newCustomers) > 0 ? "growth-positive" : "muted");
+    appendCell(tr, formatNumber(city.periodOrders));
+    appendCell(tr, money(city.periodRevenue, currency));
+    appendCell(tr, formatDate(city.lastPaidAt));
+    els.paidCityRows.appendChild(tr);
+  });
+}
+
+function renderPaidSiteRows(sites, currency) {
+  els.paidSiteRows.replaceChildren();
+  if (!sites.length) {
+    els.paidSiteRows.innerHTML = '<tr><td colspan="7" class="muted">No sites have a completed positive-value order yet.</td></tr>';
+    return;
+  }
+  sites.forEach((site) => {
+    const tr = document.createElement("tr");
+    appendCell(tr, site.siteName || site.siteId);
+    appendCell(tr, site.city || "—");
+    appendCell(tr, formatNumber(site.paidCustomers));
+    appendCell(tr, formatSignedCount(site.newCustomers), Number(site.newCustomers) > 0 ? "growth-positive" : "muted");
+    appendCell(tr, formatNumber(site.periodOrders));
+    appendCell(tr, money(site.periodRevenue, currency));
+    appendCell(tr, formatDate(site.lastPaidAt));
+    els.paidSiteRows.appendChild(tr);
   });
 }
 
@@ -1921,6 +2220,9 @@ initializeTimedOutputs();
 
 els.loginForm.addEventListener("submit",event=>{event.preventDefault();signIn(els.adminCodeInput.value);});
 els.logoutBtn.addEventListener("click",()=>signOut()); els.refreshBtn.addEventListener("click",refreshActive); els.reloadAnalyticsBtn.addEventListener("click",loadAnalytics); els.reloadOrdersBtn.addEventListener("click",loadOrders); els.reloadCodesBtn.addEventListener("click",loadCodes); els.reloadPromosBtn.addEventListener("click",loadPromos); els.reloadFeedbackBtn.addEventListener("click",loadFeedback); els.reloadSupportBtn.addEventListener("click",loadSupport);
+els.refreshGrowthBtn.addEventListener("click",loadCurrentAnalyticsView);
+els.growthRange.addEventListener("change",loadCurrentAnalyticsView);
+document.querySelectorAll("[data-paid-analytics-view]").forEach(button=>button.addEventListener("click",()=>openPaidAnalyticsView(button.dataset.paidAnalyticsView)));
 els.analyticsRange.addEventListener("change",loadAnalytics);
 document.querySelectorAll("[data-analytics-view]").forEach(button=>button.addEventListener("click",()=>openAnalyticsView(button.dataset.analyticsView)));
 els.cityExplorerSelect.addEventListener("change",()=>{selectedAnalyticsCity=els.cityExplorerSelect.value;renderSelectedCityExplorer();});

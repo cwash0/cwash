@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Your free wash | CircuitWash</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/activate.css?v=support-menu-1" />
+  <link rel="stylesheet" href="assets/activate.css?v=system-7" />
   <link rel="stylesheet" href="assets/site-selector.css?v=shared-selector-2" />
-  <link rel="stylesheet" href="assets/trial-activate.css?v=support-menu-1" />
+  <link rel="stylesheet" href="assets/payment-sheet.css?v=payment-methods-2" />
+  <link rel="stylesheet" href="assets/trial-activate.css?v=offer-emphasis-2" />
+  <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
   <div id="trialActivateRoot">
@@ -15,11 +17,10 @@
       <header class="app-header">
         <a class="app-brand" href="/" aria-label="Back to CircuitWash home">
           <span class="app-back" aria-hidden="true">←</span>
-          <span class="app-brand-mark" aria-hidden="true"><i></i></span>
           <strong>Circuit<span>Wash</span></strong>
         </a>
         <div class="trial-header-actions">
-          <span id="trialPill" class="trial-pill">1 free start</span>
+          <span id="trialPill" class="trial-pill">1 Free Start</span>
           <details class="account-menu">
             <summary aria-label="Open account menu"><span aria-hidden="true">&bull;&bull;&bull;</span></summary>
             <div class="account-menu-panel">
@@ -28,7 +29,7 @@
           </details>
         </div>
         <div class="location-summary">
-          <div><span class="location-label">Laundry room</span><h1 id="trialSiteTitle">Loading...</h1></div>
+          <div><span class="location-label">Laundry Room</span><h1 id="trialSiteTitle">Loading...</h1></div>
           <button id="changeTrialSiteBtn" class="activation-change-site" type="button" aria-label="Change site" title="Change site">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M4 20h16"></path>
@@ -77,10 +78,22 @@
         </div>
 
         <aside id="trialAccessOffer" class="continuation-panel hidden" aria-labelledby="trialOfferTitle">
-          <p class="continuation-kicker">For next time</p>
-          <h3 id="trialOfferTitle">Want to use CircuitWash again?</h3>
-          <a id="trialPurchaseCta" class="btn-primary continuation-cta" href="/pay.html">Get 1-year access <span aria-hidden="true">&rarr;</span></a>
-          <a class="continuation-dismiss" href="/">Maybe later</a>
+          <div id="trialPurchaseOfferContent">
+            <h3 id="trialOfferTitle">Want to use CircuitWash again?</h3>
+            <button id="trialPurchaseCta" class="btn-primary continuation-cta" type="button">Get 1-year access <span aria-hidden="true">&rarr;</span></button>
+            <p id="trialPurchaseMessage" class="trial-purchase-message" aria-live="polite"></p>
+            <a class="continuation-dismiss" href="/">Maybe later</a>
+          </div>
+          <div id="trialPurchaseResult" class="trial-purchase-result hidden" aria-live="polite">
+            <p class="continuation-kicker">Your 1-year access code</p>
+            <h3 id="trialPurchaseResultTitle">Access ready</h3>
+            <button id="trialPurchasedCode" class="trial-purchased-code" type="button" aria-label="Copy access code">
+              <strong id="trialPurchasedCodeValue"></strong>
+              <span id="trialPurchasedCodeHint">Tap to copy</span>
+            </button>
+            <p id="trialPurchaseEmailStatus" class="trial-purchase-email-status"></p>
+            <a id="trialPurchaseUseCode" class="btn-primary continuation-cta" href="/activate.html">Use access code <span aria-hidden="true">&rarr;</span></a>
+          </div>
         </aside>
 
         <div id="trialOutcomeActions" class="trial-state-actions hidden">
@@ -91,14 +104,13 @@
 
       <section id="trialControls" class="control-stack hidden" aria-label="Free activation machine controls">
           <article class="control-panel machine-panel" aria-labelledby="trialMachineRegionTitle">
-            <div class="panel-heading"><span class="section-kicker">Machine</span><h2 id="trialMachineRegionTitle" class="visually-hidden">Choose a machine</h2></div>
+            <h2 id="trialMachineRegionTitle" class="visually-hidden">Choose a machine</h2>
             <div id="trialDeviceMap" class="machine-map"><div class="machine-empty">No machines loaded yet.</div></div>
           </article>
 
           <article id="trialConnectionModule" class="control-panel connection-panel" data-state="ready" aria-labelledby="trialConnectionTitle">
             <div class="ble-visual" aria-hidden="true">
-              <span class="signal-ring signal-ring-one"></span><span class="signal-ring signal-ring-two"></span><span class="signal-ring signal-ring-three"></span>
-              <span class="ble-machine-icon"><svg class="connection-symbol" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="2.2"></circle><path d="M11.7 20.3a6.1 6.1 0 0 1 0-8.6M20.3 11.7a6.1 6.1 0 0 1 0 8.6M8.4 23.6a10.8 10.8 0 0 1 0-15.2M23.6 8.4a10.8 10.8 0 0 1 0 15.2"></path></svg><i class="ble-check"></i></span>
+              <span class="ble-machine-icon"><span class="connection-symbol"></span><i class="ble-check"></i></span>
             </div>
             <div class="connection-copy">
               <div id="trialStatus" class="status-pill" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span>Ready to connect</span></div>
@@ -113,7 +125,7 @@
           </article>
 
           <article id="trialCycleSection" class="control-panel cycle-panel is-locked" aria-labelledby="trialCycleTitle">
-            <div class="panel-heading cycle-heading"><div><span class="section-kicker">Cycle</span><h2 id="trialCycleTitle">Choose a cycle</h2></div><span class="cycle-state" aria-hidden="true"></span></div>
+            <div class="panel-heading cycle-heading"><div><h2 id="trialCycleTitle">Choose a cycle</h2></div><span class="cycle-state" aria-hidden="true"></span></div>
             <p id="trialCycleHint" class="cycle-hint hidden"></p>
             <div id="trialMachineButtons" class="machine-actions"></div>
           </article>
@@ -127,6 +139,8 @@
       </section>
     </main>
   </div>
+
+  <div id="trialPurchasePaymentHost"></div>
 
   <div id="trialMachinePickerOverlay" class="machine-picker-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="trialMachinePickerTitle">
     <div class="machine-picker-backdrop" data-close-trial-machine-picker></div>
@@ -199,6 +213,6 @@
 
   <script src="assets/funnel-analytics.js"></script>
   <script src="assets/site-selector.js?v=site-results-2"></script>
-  <script src="assets/trial-activate.js?v=success-copy-1"></script>
+  <script src="assets/trial-activate.js?v=checkout-ready-1"></script>
 </body>
 </html>

@@ -3,6 +3,20 @@ const { Pool } = require("pg");
 const { getSiteById } = require("./_site-data");
 const { ensureOrderStorage } = require("./_order-storage");
 const { ensureSupportSchema } = require("./_support-schema");
+const {
+  assertAllowedOrigin,
+  assertJsonRequest,
+  consumeRateLimits,
+  createFormToken,
+  getClientIp,
+  hashIdentifier,
+  inspectMessage,
+  isHoneypotFilled,
+  isObviousBot,
+  turnstileConfig,
+  verifyFormToken,
+  verifyTurnstile
+} = require("./_support-abuse");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -28,6 +42,8 @@ class PublicError extends Error {
 exports.handler = async (event) => {
   try {
     if (event.httpMethod !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+    const requestProblem = assertJsonRequest(event) || assertAllowedOrigin(event);
+    if (requestProblem) throw requestProblem;
 
     let body;
     try {
@@ -36,15 +52,29 @@ exports.handler = async (event) => {
       throw new PublicError("Invalid request.", 400, "bad_request");
     }
 
-    await ensureOrderStorage(pool);
+    const action = String(body.action || "submit").trim().toLowerCase();
+    if (action === "config") {
+      const turnstile = turnstileConfig();
+      return json({ ok: true, formToken: createFormToken(), turnstile: { enabled: turnstile.enabled, siteKey: turnstile.enabled ? turnstile.siteKey : "" } });
+    }
+    if (action !== "context" && action !== "submit") throw new PublicError("Invalid request.", 400, "bad_request");
+
+    if (action === "submit" && (isHoneypotFilled(body.companyWebsite) || isObviousBot(event))) return fakeAccepted(body);
+
+    const formToken = verifyFormToken(body.formToken, { enforceMinimumAge: action === "submit" });
+    if (!formToken.valid) throw new PublicError("Refresh the page and try again.", 400, "invalid_form_session");
+
+    const clientIp = getClientIp(event);
+    const sessionId = String(body.sessionId || "").trim().slice(0, 200);
     await ensureSupportSchema(pool);
 
-    const action = String(body.action || "submit").trim().toLowerCase();
     if (action === "context") {
+      const limit = await consumeRateLimits(pool, "context", { clientIp, sessionId });
+      if (!limit.allowed) throw rateLimitError(limit.retryAfter);
+      await ensureOrderStorage(pool);
       const context = await resolveCustomerContext({ accessCode: body.accessCode, orderId: body.orderId });
       return json({ ok: true, email: context.email || "" });
     }
-    if (action !== "submit") throw new PublicError("Invalid request.", 400, "bad_request");
 
     const email = normalizeEmail(body.email);
     const message = String(body.message || "").normalize("NFKC").trim();
@@ -56,14 +86,34 @@ exports.handler = async (event) => {
     if (idempotencyKey.length < 12 || idempotencyKey.length > 200) {
       throw new PublicError("Refresh the page and try again.", 400, "invalid_submission");
     }
+    const messageInspection = inspectMessage(message);
+    if (!messageInspection.allowed) throw new PublicError("Please describe the laundry issue without repeated or promotional content.", 400, "message_rejected");
 
+    if (turnstileConfig().enabled) {
+      const challengeLimit = await consumeRateLimits(pool, "challenge", { clientIp, sessionId });
+      if (!challengeLimit.allowed) throw rateLimitError(challengeLimit.retryAfter);
+      const turnstile = await verifyTurnstile(body.turnstileToken, clientIp);
+      if (!turnstile.success) {
+        const unavailable = turnstile.reason === "turnstile_unavailable";
+        throw new PublicError(
+          unavailable ? "The security check is unavailable. Please try again shortly." : "Complete the security check and try again.",
+          unavailable ? 503 : 400,
+          unavailable ? "security_check_unavailable" : "security_check_failed"
+        );
+      }
+    }
+    const limit = await consumeRateLimits(pool, "submit", { clientIp, email, sessionId, message });
+    if (!limit.allowed) throw rateLimitError(limit.retryAfter);
+
+    await ensureOrderStorage(pool);
     const customerContext = await resolveCustomerContext({
       accessCode: body.accessCode,
       orderId: body.orderId,
       email
     });
     const sourceRoute = normalizeRoute(body.sourceRoute);
-    const sessionHash = body.sessionId ? keyedHash(`session:${String(body.sessionId).slice(0, 200)}`) : null;
+    const sessionHash = sessionId ? keyedHash(`session:${sessionId}`) : null;
+    const ipHash = hashIdentifier("support-ip", clientIp);
     const submissionKeyHash = keyedHash(`submission:${idempotencyKey}`);
     const userAgent = String(event.headers?.["user-agent"] || event.headers?.["User-Agent"] || "").slice(0, 500);
 
@@ -73,11 +123,11 @@ exports.handler = async (event) => {
           submission_key_hash, from_email, subject, body_text, status, source,
           source_route, session_hash, site_id, site_name, machine_id,
           access_code_hash, linked_access_code, linked_order_id, context_match,
-          user_agent, is_read, received_at, last_activity_at
+          ip_hash, user_agent, is_read, received_at, last_activity_at
         ) values (
           $1, $2, 'CircuitWash support request', $3, 'NEW', 'WEB',
           $4, $5, $6, $7, $8, $9, $10, $11, $12,
-          $13, false, now(), now()
+          $13, $14, false, now(), now()
         )
         on conflict (submission_key_hash) where submission_key_hash is not null do update
           set submission_key_hash = excluded.submission_key_hash
@@ -96,6 +146,7 @@ exports.handler = async (event) => {
         customerContext.accessCode,
         customerContext.orderId,
         customerContext.match,
+        ipHash,
         userAgent
       ]
     );
@@ -103,13 +154,30 @@ exports.handler = async (event) => {
     const ticket = result.rows[0];
     return json({ ok: true, ticketId: `CW-${ticket.id}`, email: ticket.from_email }, 201);
   } catch (error) {
-    if (error instanceof PublicError) {
-      return json({ ok: false, error: error.code, message: error.message }, error.statusCode);
+    if (error instanceof PublicError || error?.isAbuseError) {
+      return json(
+        { ok: false, error: error.code, message: error.message },
+        error.statusCode,
+        error.retryAfter ? { "retry-after": String(error.retryAfter) } : {}
+      );
     }
     console.error("[support-ticket] fatal:", error?.stack || error);
     return json({ ok: false, error: "server_error", message: "Support is unavailable right now. Please try again." }, 500);
   }
 };
+
+function fakeAccepted(body = {}) {
+  const email = normalizeEmail(body.email);
+  const seed = String(body.idempotencyKey || crypto.randomUUID());
+  const ticketId = `CW-${crypto.createHash("sha256").update(seed).digest("hex").slice(0, 8).toUpperCase()}`;
+  return json({ ok: true, ticketId, email }, 201);
+}
+
+function rateLimitError(retryAfter) {
+  const error = new PublicError("Too many support requests. Please wait and try again.", 429, "rate_limited");
+  error.retryAfter = Math.max(1, Number(retryAfter) || 60);
+  return error;
+}
 
 async function resolveCustomerContext({ accessCode: accessCodeValue, orderId: orderIdValue, email: emailValue } = {}) {
   const requestedCode = normalizeAccessCode(accessCodeValue);
@@ -233,12 +301,13 @@ function normalizeMachineId(value) {
   return machineId || null;
 }
 
-function json(data, statusCode = 200) {
+function json(data, statusCode = 200, extraHeaders = {}) {
   return {
     statusCode,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      ...extraHeaders
     },
     body: JSON.stringify(data)
   };

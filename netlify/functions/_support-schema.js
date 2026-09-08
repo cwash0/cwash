@@ -29,6 +29,7 @@ async function ensureSupportSchema(pool) {
       linked_access_code text,
       linked_order_id text,
       context_match text,
+      ip_hash char(64),
       user_agent text,
       is_read boolean not null default false,
       received_at timestamptz not null default now(),
@@ -53,6 +54,7 @@ async function ensureSupportSchema(pool) {
       add column if not exists linked_access_code text,
       add column if not exists linked_order_id text,
       add column if not exists context_match text,
+      add column if not exists ip_hash char(64),
       add column if not exists user_agent text
   `);
   await pool.query(`
@@ -80,6 +82,15 @@ async function ensureSupportSchema(pool) {
     )
   `);
   await pool.query(`
+    create table if not exists support_rate_limits (
+      rate_key char(64) primary key,
+      request_count bigint not null default 1,
+      expires_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await pool.query(`
     alter table support_replies
       add column if not exists direction text not null default 'OUTBOUND',
       add column if not exists from_email text,
@@ -102,11 +113,13 @@ async function ensureSupportSchema(pool) {
   await pool.query(`create unique index if not exists support_replies_received_email_idx on support_replies(received_email_id) where received_email_id is not null`);
   await pool.query(`create index if not exists support_tickets_status_activity_idx on support_tickets(status, last_activity_at desc)`);
   await pool.query(`create index if not exists support_tickets_email_idx on support_tickets(lower(from_email), last_activity_at desc)`);
+  await pool.query(`create index if not exists support_tickets_ip_idx on support_tickets(ip_hash, last_activity_at desc) where ip_hash is not null`);
   await pool.query(`create index if not exists support_tickets_linked_order_idx on support_tickets(linked_order_id) where linked_order_id is not null`);
   await pool.query(`create index if not exists support_tickets_linked_code_idx on support_tickets(linked_access_code) where linked_access_code is not null`);
   await pool.query(`create index if not exists support_replies_ticket_idx on support_replies(ticket_id, sent_at)`);
   await pool.query(`create index if not exists support_tickets_message_id_idx on support_tickets(message_id_normalized) where message_id_normalized is not null`);
   await pool.query(`create index if not exists support_replies_message_id_idx on support_replies(message_id_normalized) where message_id_normalized is not null`);
+  await pool.query(`create index if not exists support_rate_limits_expiry_idx on support_rate_limits(expires_at)`);
 
   supportSchemaReady = true;
 }

@@ -28,7 +28,7 @@
         <button class="active" data-tab="dashboard" data-nav-group="command" type="button"><span class="nav-icon">01</span><span class="nav-copy"><strong>Command</strong><small>Overview and priorities</small></span></button>
         <button data-tab="orders" data-nav-group="operations" type="button"><span class="nav-icon">02</span><span class="nav-copy"><strong>Operations</strong><small>Orders and access</small></span><span id="navOrdersBadge" class="nav-badge hidden"></span></button>
         <button data-tab="support" data-nav-group="customers" type="button"><span class="nav-icon">03</span><span class="nav-copy"><strong>Customers</strong><small>Support and feedback</small></span><span id="navSupportBadge" class="nav-badge hidden"></span></button>
-        <button data-tab="analytics" data-nav-group="growth" type="button"><span class="nav-icon">04</span><span class="nav-copy"><strong>Growth</strong><small>Demand and offers</small></span></button>
+        <button data-tab="analytics" data-nav-group="growth" type="button"><span class="nav-icon">04</span><span class="nav-copy"><strong>Growth</strong><small>Customers and reach</small></span></button>
       </nav>
       <div class="sidebar-status"><span class="status-light"></span><div><strong>Production</strong><small>Live application data</small></div></div>
     </aside>
@@ -176,6 +176,58 @@
 
         <section id="tab-analytics" class="tab-section hidden">
           <nav class="module-nav" aria-label="Growth modules"><button class="active" data-open-tab="analytics">Analytics</button><button data-open-tab="promos">Promotions</button></nav>
+          <header class="page-header paid-growth-header">
+            <div><span class="eyebrow">Analytics</span><h1 class="page-title">Growth and product usage</h1><p>Paid growth and machine usage, measured separately and shown in plain numbers.</p></div>
+            <div class="header-actions"><label class="field compact"><span>Reporting window</span><select id="growthRange"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="180">6 months</option><option value="365">12 months</option><option value="all">All time</option></select></label><button id="refreshGrowthBtn" class="button" type="button">Refresh</button></div>
+          </header>
+
+          <nav class="paid-analytics-nav" aria-label="Analytics views"><button class="active" data-paid-analytics-view="growth" type="button">Paid growth</button><button data-paid-analytics-view="usage" type="button">Usage</button></nav>
+
+          <div id="paidGrowthView" class="paid-analytics-view">
+
+          <div class="paid-growth-source"><span class="status-dot"></span><strong>Paid data only</strong><span>Completed orders above £0. Free trials, searches, and site selections never count toward customer or city growth.</span></div>
+          <p id="paidGrowthSummary" class="paid-growth-summary">Loading paid growth…</p>
+
+          <section class="paid-growth-kpis" aria-label="Paid growth summary">
+            <article class="panel growth-kpi primary"><span>Total paid customers</span><strong id="paidCustomersMetric">-</strong><small id="paidCustomersSub">All time</small></article>
+            <article class="panel growth-kpi"><span>New paid customers</span><strong id="newPaidCustomersMetric">-</strong><small id="newPaidCustomersSub">Selected window</small></article>
+            <article class="panel growth-kpi"><span>Paid revenue</span><strong id="paidRevenueMetric">-</strong><small id="paidRevenueSub">Selected window</small></article>
+            <article class="panel growth-kpi"><span>Paid orders</span><strong id="paidOrdersMetric">-</strong><small id="paidOrdersSub">Selected window</small></article>
+            <article class="panel growth-kpi footprint"><span>Paying cities</span><strong id="paidCitiesMetric">-</strong><small id="paidCitiesSub">Cities with a paid customer</small></article>
+            <article class="panel growth-kpi footprint"><span>Paid sites</span><strong id="paidSitesMetric">-</strong><small id="paidSitesSub">Sites with a paid customer</small></article>
+          </section>
+
+          <section class="panel growth-history-panel"><div class="section-heading"><div><span class="eyebrow">Growth history</span><h2>What changed in each period</h2><p id="growthHistorySummary">A labelled record of first-time customers, sales, and newly reached locations.</p></div></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>New customers</th><th>Paid orders</th><th>Revenue</th><th>New cities</th><th>New sites</th><th>Total cities</th><th>Total sites</th></tr></thead><tbody id="growthHistoryRows"><tr><td colspan="8" class="muted">Loading growth history…</td></tr></tbody></table></div></section>
+
+          <section class="panel paid-market-panel"><div class="section-heading"><div><span class="eyebrow">New locations</span><h2>Places reached for the first time</h2><p>Only cities whose first positive-value completed order happened in this window.</p></div></div><div id="newPaidMarkets" class="paid-market-list"></div></section>
+
+          <section class="panel paid-performance-panel"><div class="section-heading"><div><span class="eyebrow">City performance</span><h2>Customers and sites by city</h2><p>The clearest view of geographic reach: how many paying customers and paid sites each city has.</p></div><span id="cityPerformanceCount" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>City</th><th>Paid sites</th><th>Paid customers</th><th>New customers</th><th>Orders</th><th>Revenue</th><th>Latest purchase</th></tr></thead><tbody id="paidCityRows"><tr><td colspan="7" class="muted">Loading paid cities…</td></tr></tbody></table></div></section>
+
+          <details class="panel paid-sites-detail"><summary><span><strong>Site performance</strong><small>See which individual sites are driving paid growth</small></span></summary><div class="table-wrap"><table><thead><tr><th>Site</th><th>City</th><th>Paid customers</th><th>New customers</th><th>Orders</th><th>Revenue</th><th>Latest purchase</th></tr></thead><tbody id="paidSiteRows"><tr><td colspan="7" class="muted">Loading paid sites…</td></tr></tbody></table></div></details>
+          </div>
+
+          <div id="usageAnalyticsView" class="paid-analytics-view hidden">
+            <div class="usage-definition"><span class="status-dot"></span><strong>What counts as usage</strong><span>Every recorded machine activation: paid access codes, admin-issued codes, and completed free trials. Usage does not change paid growth figures.</span></div>
+            <p id="usageAnalyticsSummary" class="paid-growth-summary">Loading activation usage…</p>
+
+            <section class="paid-growth-kpis" aria-label="Activation usage summary">
+              <article class="panel growth-kpi primary"><span>Total activations</span><strong id="totalActivationsMetric">-</strong><small>All recorded usage</small></article>
+              <article class="panel growth-kpi"><span>Activations in window</span><strong id="periodActivationsMetric">-</strong><small>Selected reporting window</small></article>
+              <article class="panel growth-kpi"><span>Cities used</span><strong id="usageCitiesMetric">-</strong><small id="usageCitiesSub">All time</small></article>
+              <article class="panel growth-kpi"><span>Sites used</span><strong id="usageSitesMetric">-</strong><small id="usageSitesSub">All time</small></article>
+              <article class="panel growth-kpi"><span>Customer-code activations</span><strong id="paidActivationsMetric">-</strong><small id="paidActivationsSub">Selected window</small></article>
+              <article class="panel growth-kpi"><span>Free-trial activations</span><strong id="trialActivationsMetric">-</strong><small id="trialActivationsSub">Selected window</small></article>
+            </section>
+
+            <section class="panel usage-history-panel"><div class="section-heading"><div><span class="eyebrow">Usage history</span><h2>Activations by period</h2><p>Access-code data is stored weekly; the selected window includes each overlapping UTC week.</p></div></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Total activations</th><th>Customer codes</th><th>Free trials</th><th>Admin / other</th><th>Sites used</th></tr></thead><tbody id="usageHistoryRows"><tr><td colspan="6" class="muted">Loading usage history…</td></tr></tbody></table></div></section>
+
+            <section class="panel usage-performance-panel"><div class="section-heading"><div><span class="eyebrow">City usage</span><h2>Total activations by city</h2><p>Which cities use the product most, with site coverage and activation source shown separately.</p></div><span id="usageCityCount" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>City</th><th>Sites used</th><th>Total activations</th><th>In window</th><th>Customer codes / window</th><th>Free trials / window</th><th>Codes used / window</th><th>Latest use</th></tr></thead><tbody id="usageCityRows"><tr><td colspan="8" class="muted">Loading city usage…</td></tr></tbody></table></div></section>
+
+            <section class="panel usage-performance-panel"><div class="section-heading"><div><span class="eyebrow">Site usage</span><h2>Total activations by site</h2><p>Every used production site, ranked by activation volume in the selected window.</p></div><span id="usageSiteCount" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>Site</th><th>City</th><th>Total activations</th><th>In window</th><th>Customer codes / window</th><th>Free trials / window</th><th>Codes used / window</th><th>Latest use</th></tr></thead><tbody id="usageSiteRows"><tr><td colspan="8" class="muted">Loading site usage…</td></tr></tbody></table></div></section>
+          </div>
+
+          <div class="legacy-analytics hidden" aria-hidden="true">
+          <nav class="module-nav" aria-label="Growth modules"><button class="active" data-open-tab="analytics">Analytics</button><button data-open-tab="promos">Promotions</button></nav>
           <header class="page-header analytics-page-header"><div><span class="eyebrow">Growth</span><h1 class="page-title">Organic spread analytics</h1><p>How city clusters are seeded, deepen, and remain active over time.</p></div><div class="header-actions"><label class="field compact"><span>Reporting window</span><select id="analyticsRange"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="180">6 months</option><option value="365">12 months</option><option value="all">All time</option></select></label><button id="reloadAnalyticsBtn" class="button" type="button">Refresh analytics</button></div></header>
           <nav class="analytics-view-nav" aria-label="Analytics views"><button class="active" data-analytics-view="overview" type="button">Overview</button><button data-analytics-view="spread" type="button">City Spread</button><button data-analytics-view="explorer" type="button">City Explorer</button><button data-analytics-view="usage" type="button">Product Usage</button></nav>
 
@@ -255,6 +307,7 @@
             <div class="analytics-grid four"><section class="panel"><div class="section-heading"><h2>Payment methods</h2></div><div id="methodBreakdown" class="breakdown"></div></section><section class="panel"><div class="section-heading"><h2>Revenue by product</h2></div><div id="orderTypeBreakdown" class="breakdown"></div></section><section class="panel"><div class="section-heading"><h2>Top paid sites</h2></div><div id="topSites" class="breakdown"></div></section><section class="panel"><div class="section-heading"><h2>Email delivery</h2></div><div id="emailDelivery" class="breakdown"></div></section></div>
             <section class="panel"><div class="section-heading"><div><h2>Recent site selections</h2><p>Server-paginated drill-down; only 25 events are transferred at a time.</p></div><span id="analyticsHitsPageStatus" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Site</th><th>Search</th><th>Mode</th><th>Referrer</th></tr></thead><tbody id="analyticsHitsBody"></tbody></table></div><div class="analytics-pager"><button id="analyticsHitsPrev" class="button small" type="button" disabled>Newer</button><button id="analyticsHitsNext" class="button small" type="button" disabled>Older</button></div></section>
             <details class="advanced-block danger-zone"><summary><span><strong>Security activity</strong><small><span id="analyticsRejectedAdminMetric">-</span> rejected admin logins in 30 days</small></span></summary><div class="table-wrap" data-timed-output data-default-range="30d"><table><thead><tr><th>Date</th><th>Attempted password</th><th>Action</th></tr></thead><tbody id="adminLoginAttemptsBody"></tbody></table></div></details>
+          </div>
           </div>
         </section>
 

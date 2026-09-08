@@ -8,6 +8,8 @@ const { getValidatedAnalyticsSites } = require("./_analytics-validity");
 const { ensureOrderStorage } = require("./_order-storage");
 const { ensureSupportSchema } = require("./_support-schema");
 const { calculateOrganicSpread } = require("./_city-coverage");
+const { getPaidGrowthAnalytics } = require("./_paid-growth-analytics");
+const { getUsageAnalytics } = require("./_usage-analytics");
 
 const pool = new Pool({
   connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
@@ -79,8 +81,27 @@ exports.handler = async (event) => {
       return json({ ok: true, supportEmail: SUPPORT_PUBLIC_EMAIL });
     }
 
-    if (action === "analytics") return json({ ok: true, ...(await getAnalyticsData(body)) });
-    if (action === "analytics_events") return json({ ok: true, ...(await getAnalyticsEvents(body)) });
+    if (action === "analytics") {
+      return json({
+        ok: true,
+        ...(await getPaidGrowthAnalytics({
+          pool,
+          adminOrderSource: await getAdminOrderSource(),
+          publicSites: getPublicSites(),
+          periodDays: body.periodDays
+        }))
+      });
+    }
+    if (action === "usage_analytics") {
+      return json({
+        ok: true,
+        ...(await getUsageAnalytics({
+          pool,
+          publicSites: getPublicSites(),
+          periodDays: body.periodDays
+        }))
+      });
+    }
 
     await ensureSchema();
     if (action === "dashboard") return json({ ok: true, ...(await getDashboard()) });
@@ -548,7 +569,8 @@ async function getAdminOrderSource() {
     sources.push(`
       select order_id, site_id, amount, currency, status,
              coalesce(access_code, entitlement_access_code) as linked_access_code,
-             customer_email, email_status, payment_method,
+             coalesce(nullif(trim(customer_email), ''), nullif(trim(payer_email), '')) as customer_email,
+             email_status, payment_method,
              order_type, quantity, entitlement_week_start, entitlement_week_end, provider_reference,
              subtotal_amount, discount_amount, promo_code,
              created_at, completed_at

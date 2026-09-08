@@ -11,6 +11,12 @@ const BLUEFY_OPEN_FALLBACK_MS = 1400;
 const BLUEFY_PENDING_URL_KEY = "zaftPendingBluefyTrialUrl";
 const BLUEFY_PENDING_RETRY_KEY = "zaftPendingBluefyTrialRetryAt";
 const BLUEFY_PENDING_RETRY_MS = 2500;
+const TRIAL_PURCHASE_ENDPOINT = "/.netlify/functions/stripe-checkout";
+const PURCHASE_STORAGE_KEY = "laundryAccessPurchase";
+const EMAIL_STORAGE_KEY = "laundryAccessEmail";
+const ACTIVATE_SESSION_KEY = "laundryActivateAccessCode";
+const ANALYTICS_VISITOR_KEY = "laundryAnalyticsVisitor";
+const ANALYTICS_SESSION_KEY = "laundryAnalyticsSession";
 const CMD = {
   HANDSHAKE: "[HANDSHAKE:ENABLE]",
   VERSION: "[VERSION]",
@@ -22,6 +28,54 @@ const DEFAULT_WASHER_CYCLES = {
   extraWash: "Extra Wash",
   extraWashRinse: "Extra Wash + Rinse"
 };
+
+function mountTrialPurchasePaymentSheet() {
+  const host = document.getElementById("trialPurchasePaymentHost");
+  host.innerHTML = `
+    <div id="trialPaymentMethods" class="payment-sheet hidden" role="dialog" aria-modal="true" aria-labelledby="trialPaymentSheetTitle">
+      <div class="payment-sheet-backdrop" data-close-trial-payment-sheet></div>
+      <div class="payment-sheet-panel">
+        <div class="payment-sheet-header">
+          <div>
+            <h2 id="trialPaymentSheetTitle">Choose payment method</h2>
+            <p id="trialPaymentSheetSubtitle">1-year access for this laundry room.</p>
+          </div>
+          <button id="trialPaymentSheetCloseBtn" class="payment-sheet-close" type="button" aria-label="Close payment options">Close</button>
+        </div>
+        <div id="trialPaymentSheetLoader" class="payment-sheet-loader" role="status" aria-live="polite" aria-hidden="true">
+          <div class="checkout-loading-spinner" aria-hidden="true"></div>
+          <strong>Preparing secure checkout</strong>
+          <span>Loading payment options...</span>
+        </div>
+        <div id="trialPaymentSheetContent" class="payment-sheet-content">
+          <div class="payment-sheet-total" aria-live="polite"><span>Total</span><strong id="trialPaymentSheetTotal">&mdash;</strong></div>
+          <div class="stripe-checkout-panel">
+            <section id="trialExpressCheckout" class="express-checkout hidden" aria-labelledby="trialExpressCheckoutHeading">
+              <p id="trialExpressCheckoutHeading" class="payment-method-label">Express checkout</p>
+              <div id="trialExpressCheckoutElement"></div>
+            </section>
+            <div id="trialPaymentDivider" class="payment-divider hidden"><span>Or pay with card</span></div>
+            <section id="trialCardFieldsWrap" class="stripe-payment-method" aria-labelledby="trialCardPaymentHeading">
+              <div class="card-method-header">
+                <div class="card-method-copy"><span class="card-method-icon" aria-hidden="true"></span><div class="card-method-title"><h3 id="trialCardPaymentHeading">Card payment</h3><span id="trialCardPoweredBy" class="card-powered-by">Secure checkout</span></div></div>
+                <button id="trialCardPaymentToggle" class="card-expand-button" type="button" aria-controls="trialCardFieldsForm" aria-expanded="true" aria-label="Collapse card payment"><span class="card-expand-indicator" aria-hidden="true"></span></button>
+              </div>
+              <div id="trialCardFieldsForm" class="card-fields-form" role="region" aria-labelledby="trialCardPaymentHeading" aria-hidden="false">
+                <form id="trialStripePaymentForm" class="stripe-payment-form">
+                  <div id="trialPaymentElement" class="payment-element"></div>
+                  <button id="trialStripeSubmitBtn" class="stripe-checkout-button" type="submit" disabled>Pay securely</button>
+                  <p id="trialStripeMessage" class="stripe-note" aria-live="polite">Secure encrypted payment.</p>
+                </form>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  return host;
+}
+
+const trialPurchasePaymentRoot = mountTrialPurchasePaymentSheet();
 
 const els = {
   root: document.getElementById("trialActivateRoot"),
@@ -39,6 +93,14 @@ const els = {
   completionStatus: document.getElementById("trialCompletionStatus"),
   accessOffer: document.getElementById("trialAccessOffer"),
   purchaseCta: document.getElementById("trialPurchaseCta"),
+  purchaseOfferContent: document.getElementById("trialPurchaseOfferContent"),
+  purchaseMessage: document.getElementById("trialPurchaseMessage"),
+  purchaseResult: document.getElementById("trialPurchaseResult"),
+  purchasedCode: document.getElementById("trialPurchasedCode"),
+  purchasedCodeValue: document.getElementById("trialPurchasedCodeValue"),
+  purchasedCodeHint: document.getElementById("trialPurchasedCodeHint"),
+  purchaseEmailStatus: document.getElementById("trialPurchaseEmailStatus"),
+  purchaseUseCode: document.getElementById("trialPurchaseUseCode"),
   outcomeActions: document.getElementById("trialOutcomeActions"),
   outcomeRetry: document.getElementById("trialOutcomeRetry"),
   outcomeDone: document.getElementById("trialOutcomeDone"),
@@ -63,7 +125,24 @@ const els = {
   search: document.getElementById("trialChangeSiteSearch"),
   searchSpinner: document.getElementById("trialChangeSiteSearchSpinner"),
   results: document.getElementById("trialChangeSiteResults"),
-  siteMessage: document.getElementById("trialChangeSiteMessage")
+  siteMessage: document.getElementById("trialChangeSiteMessage"),
+  trialPaymentSheet: trialPurchasePaymentRoot.querySelector("#trialPaymentMethods"),
+  trialPaymentSheetClose: trialPurchasePaymentRoot.querySelector("#trialPaymentSheetCloseBtn"),
+  trialPaymentSheetSubtitle: trialPurchasePaymentRoot.querySelector("#trialPaymentSheetSubtitle"),
+  trialPaymentSheetLoader: trialPurchasePaymentRoot.querySelector("#trialPaymentSheetLoader"),
+  trialPaymentSheetContent: trialPurchasePaymentRoot.querySelector("#trialPaymentSheetContent"),
+  trialPaymentSheetTotal: trialPurchasePaymentRoot.querySelector("#trialPaymentSheetTotal"),
+  trialExpressCheckout: trialPurchasePaymentRoot.querySelector("#trialExpressCheckout"),
+  trialExpressCheckoutElement: trialPurchasePaymentRoot.querySelector("#trialExpressCheckoutElement"),
+  trialPaymentDivider: trialPurchasePaymentRoot.querySelector("#trialPaymentDivider"),
+  trialCardFieldsWrap: trialPurchasePaymentRoot.querySelector("#trialCardFieldsWrap"),
+  trialCardPaymentToggle: trialPurchasePaymentRoot.querySelector("#trialCardPaymentToggle"),
+  trialCardPoweredBy: trialPurchasePaymentRoot.querySelector("#trialCardPoweredBy"),
+  trialCardFieldsForm: trialPurchasePaymentRoot.querySelector("#trialCardFieldsForm"),
+  trialStripePaymentForm: trialPurchasePaymentRoot.querySelector("#trialStripePaymentForm"),
+  trialPaymentElement: trialPurchasePaymentRoot.querySelector("#trialPaymentElement"),
+  trialStripeSubmit: trialPurchasePaymentRoot.querySelector("#trialStripeSubmitBtn"),
+  trialStripeMessage: trialPurchasePaymentRoot.querySelector("#trialStripeMessage")
 };
 
 const enc = new TextEncoder();
@@ -89,6 +168,17 @@ let bluefyCopyToastTimer = null;
 let machinePickerReturnFocus = null;
 let currentSite = null;
 let currentOutcomeContext = null;
+let trialPurchaseConfig = null;
+let trialPurchaseStripe = null;
+let trialPurchaseElements = null;
+let trialPurchaseCardElement = null;
+let trialPurchaseExpressElement = null;
+let trialPurchaseReady = false;
+let trialPurchaseCardReady = false;
+let trialPurchaseExpressReady = false;
+let trialPurchaseWalletAvailable = false;
+let trialPurchaseCardExpanded = true;
+let trialPurchaseBusy = false;
 
 const trialSiteSelector = window.CircuitWashSiteSelector.create({
   input: els.search,
@@ -171,7 +261,7 @@ function machineTypeLabel(machine) {
 function machineIconMarkup(machine) {
   const type = machineType(machine);
   if (type === "washer" || type === "dryer") {
-    return `<img class="machine-image machine-image-${type}" src="/assets/${type}.png" alt="" aria-hidden="true" draggable="false">`;
+    return `<img class="machine-image machine-image-${type}" src="/assets/${type}.svg" alt="" aria-hidden="true" draggable="false">`;
   }
   return '<svg class="machine-symbol" viewBox="0 0 32 32" aria-hidden="true"><rect x="5.5" y="3" width="21" height="26" rx="4"></rect><path d="M6 10.5h20"></path><circle cx="10.5" cy="7" r="1"></circle><path d="M15 7h7"></path><circle cx="16" cy="19.5" r="7"></circle></svg>';
 }
@@ -228,6 +318,7 @@ function setStatus(text, tone = "") {
 
 function showError(title, text) {
   els.root.classList.remove("post-activation-success");
+  els.root.classList.remove("trial-outcome-active");
   els.loading.classList.add("hidden");
   els.controls.classList.add("hidden");
   els.outcome.classList.add("hidden");
@@ -260,7 +351,389 @@ function outcomeContext({ machine = null, cycleKey = "", cycleLabel: label = "",
 
 function renderContinuationPrompt() {
   if (!currentSite) return;
-  els.purchaseCta.href = `/pay.html?site=${encodeURIComponent(currentSite.id)}&source=free-trial`;
+  els.trialPaymentSheetSubtitle.textContent = `1-year access for ${currentSite.name}.`;
+}
+
+function normaliseTrialPurchaseEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidTrialPurchaseEmail(value) {
+  const email = normaliseTrialPurchaseEmail(value);
+  return email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getTrialPurchaseEmail() {
+  const claimedEmail = normaliseTrialPurchaseEmail(claim?.email);
+  if (claimedEmail) return claimedEmail;
+  try { return normaliseTrialPurchaseEmail(localStorage.getItem(EMAIL_STORAGE_KEY)); } catch (_) { return ""; }
+}
+
+function setTrialPurchaseMessage(text = "", tone = "") {
+  els.purchaseMessage.textContent = String(text || "");
+  els.purchaseMessage.className = `trial-purchase-message ${tone}`.trim();
+}
+
+function setTrialStripeMessage(text = "Secure encrypted payment.", tone = "") {
+  els.trialStripeMessage.textContent = String(text || "");
+  els.trialStripeMessage.className = `stripe-note ${tone}`.trim();
+}
+
+function formatTrialPurchaseMoney(value) {
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: trialPurchaseConfig?.currency || "GBP"
+  }).format(Number(value) || 0);
+}
+
+function trialPurchaseTotal() {
+  return String(trialPurchaseConfig?.price || "0.00");
+}
+
+function moneyToCents(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.round(number * 100)) : 0;
+}
+
+function setTrialPurchaseLoading(loading) {
+  const active = Boolean(loading);
+  els.trialPaymentSheet.classList.toggle("is-loading", active);
+  els.trialPaymentSheet.setAttribute("aria-busy", String(active));
+  els.trialPaymentSheetLoader.setAttribute("aria-hidden", String(!active));
+  els.trialPaymentSheetContent.setAttribute("aria-hidden", String(active));
+}
+
+function setTrialPurchaseSheetOpen(open) {
+  const active = Boolean(open);
+  els.trialPaymentSheet.classList.toggle("hidden", !active);
+  document.body.classList.toggle("trial-purchase-payment-open", active);
+  if (active) {
+    setTrialPurchaseCardExpanded(!trialPurchaseWalletAvailable);
+    window.setTimeout(() => els.trialPaymentSheetClose.focus(), 0);
+  }
+}
+
+function setTrialPurchaseCardExpanded(expanded) {
+  trialPurchaseCardExpanded = Boolean(expanded);
+  els.trialCardFieldsWrap.classList.toggle("is-condensed", !trialPurchaseCardExpanded);
+  els.trialCardFieldsWrap.classList.toggle("is-expanded", trialPurchaseCardExpanded);
+  els.trialCardFieldsForm.setAttribute("aria-hidden", String(!trialPurchaseCardExpanded));
+  els.trialCardPoweredBy.setAttribute("aria-hidden", String(trialPurchaseCardExpanded));
+  els.trialCardPaymentToggle.disabled = !trialPurchaseWalletAvailable;
+  els.trialCardPaymentToggle.setAttribute("aria-hidden", String(!trialPurchaseWalletAvailable));
+  els.trialCardPaymentToggle.setAttribute("aria-expanded", String(trialPurchaseCardExpanded));
+  els.trialCardPaymentToggle.setAttribute("aria-label", trialPurchaseCardExpanded ? "Collapse card payment" : "Expand card payment");
+  if ("inert" in els.trialStripePaymentForm) els.trialStripePaymentForm.inert = !trialPurchaseCardExpanded;
+}
+
+function closeTrialPurchaseSheet() {
+  if (trialPurchaseBusy) return;
+  setTrialPurchaseSheetOpen(false);
+}
+
+function resetTrialPurchaseElements() {
+  try { trialPurchaseCardElement?.unmount(); } catch (_) {}
+  try { trialPurchaseExpressElement?.unmount(); } catch (_) {}
+  els.trialPaymentElement.replaceChildren();
+  els.trialExpressCheckoutElement.replaceChildren();
+  els.trialExpressCheckout.classList.add("hidden");
+  els.trialPaymentDivider.classList.add("hidden");
+  els.trialPaymentSheet.classList.remove("has-wallet-payment");
+  trialPurchaseWalletAvailable = false;
+  trialPurchaseElements = null;
+  trialPurchaseCardElement = null;
+  trialPurchaseExpressElement = null;
+  trialPurchaseReady = false;
+  trialPurchaseCardReady = false;
+  trialPurchaseExpressReady = false;
+  setTrialPurchaseCardExpanded(true);
+}
+
+function trialPurchaseStripeAppearance() {
+  return {
+    theme: "night",
+    variables: {
+      colorPrimary: "#22d3ee",
+      colorBackground: "#17202b",
+      colorText: "#eef4f8",
+      colorDanger: "#ed7d7d",
+      colorTextSecondary: "#a9b7c7",
+      borderRadius: "10px",
+      fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
+    },
+    rules: {
+      ".Input": { border: "1px solid #435267", boxShadow: "none" },
+      ".Input:focus": { border: "1px solid #22d3ee", boxShadow: "0 0 0 2px rgba(34, 211, 238, 0.18)" },
+      ".Tab": { border: "1px solid #435267", boxShadow: "none" },
+      ".Tab--selected": { border: "1px solid #22d3ee", boxShadow: "0 0 0 1px rgba(34, 211, 238, 0.25)" }
+    }
+  };
+}
+
+function trialPurchaseWalletMethods() {
+  const userAgent = navigator.userAgent || "";
+  const android = /Android/i.test(userAgent);
+  const ios = /iPad|iPhone|iPod/i.test(userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  return {
+    applePay: android ? "never" : "always",
+    googlePay: ios ? "never" : "always",
+    link: "never"
+  };
+}
+
+function updateTrialPurchaseWallets(event = {}) {
+  const methods = event.availablePaymentMethods || event.paymentMethods || {};
+  trialPurchaseWalletAvailable = Boolean(methods && Object.values(methods).some(Boolean));
+  els.trialPaymentSheet.classList.toggle("has-wallet-payment", trialPurchaseWalletAvailable);
+  els.trialExpressCheckout.classList.toggle("hidden", !trialPurchaseWalletAvailable);
+  els.trialPaymentDivider.classList.toggle("hidden", !trialPurchaseWalletAvailable);
+  setTrialPurchaseCardExpanded(!trialPurchaseWalletAvailable);
+}
+
+function markTrialPurchaseReady() {
+  if (trialPurchaseReady || !trialPurchaseCardReady || !trialPurchaseExpressReady) return;
+  const readyElements = trialPurchaseElements;
+  window.setTimeout(() => {
+    if (trialPurchaseReady || trialPurchaseElements !== readyElements || !trialPurchaseCardReady || !trialPurchaseExpressReady) return;
+    trialPurchaseReady = true;
+    els.trialStripeSubmit.disabled = false;
+    els.trialStripeSubmit.textContent = `Activate access - ${formatTrialPurchaseMoney(trialPurchaseTotal())}`;
+    setTrialPurchaseLoading(false);
+  }, 120);
+}
+
+async function trialCheckoutRequest(options = {}) {
+  const response = await fetch(TRIAL_PURCHASE_ENDPOINT, { cache: "no-store", ...options });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    const error = new Error(data.message || "Secure checkout is unavailable. Please try again.");
+    error.code = data.error || "request_failed";
+    throw error;
+  }
+  return data;
+}
+
+async function prepareTrialPurchaseElements() {
+  if (trialPurchaseReady && trialPurchaseElements) {
+    setTrialPurchaseLoading(false);
+    return;
+  }
+  if (!window.Stripe) throw new Error("Secure checkout could not load. Refresh and try again.");
+  if (!trialPurchaseConfig) trialPurchaseConfig = await trialCheckoutRequest();
+  if (Number(trialPurchaseTotal()) <= 0) throw new Error("Paid access is unavailable right now.");
+
+  els.trialPaymentSheetTotal.textContent = formatTrialPurchaseMoney(trialPurchaseTotal());
+  resetTrialPurchaseElements();
+  trialPurchaseStripe = trialPurchaseStripe || window.Stripe(trialPurchaseConfig.publishableKey);
+  trialPurchaseElements = trialPurchaseStripe.elements({
+    mode: "payment",
+    amount: moneyToCents(trialPurchaseTotal()),
+    currency: trialPurchaseConfig.currency.toLowerCase(),
+    paymentMethodTypes: ["card"],
+    appearance: trialPurchaseStripeAppearance()
+  });
+
+  trialPurchaseExpressElement = trialPurchaseElements.create("expressCheckout", {
+    emailRequired: true,
+    layout: { maxColumns: 1, maxRows: 2, overflow: "auto" },
+    paymentMethods: trialPurchaseWalletMethods(),
+    buttonHeight: 54,
+    buttonTheme: { applePay: "black", googlePay: "black" }
+  });
+  trialPurchaseExpressElement.on("ready", (event) => {
+    updateTrialPurchaseWallets(event);
+    trialPurchaseExpressReady = true;
+    window.requestAnimationFrame(markTrialPurchaseReady);
+  });
+  trialPurchaseExpressElement.on("availablepaymentmethodschange", updateTrialPurchaseWallets);
+  trialPurchaseExpressElement.on("confirm", () => confirmTrialPurchase({ wallet: true }));
+  trialPurchaseExpressElement.mount(els.trialExpressCheckoutElement);
+
+  trialPurchaseCardElement = trialPurchaseElements.create("payment", {
+    fields: { billingDetails: { email: "never" } },
+    layout: { type: "tabs", defaultCollapsed: false }
+  });
+  trialPurchaseCardElement.on("ready", () => {
+    trialPurchaseCardReady = true;
+    markTrialPurchaseReady();
+  });
+  trialPurchaseCardElement.on("change", (event) => {
+    if (event.error) setTrialStripeMessage(event.error.message, "bad");
+    else if (els.trialStripeMessage.classList.contains("bad")) setTrialStripeMessage();
+  });
+  trialPurchaseCardElement.mount(els.trialPaymentElement);
+}
+
+async function beginTrialPurchase() {
+  if (trialPurchaseBusy || !currentSite) return;
+  const customerEmail = getTrialPurchaseEmail();
+  if (!isValidTrialPurchaseEmail(customerEmail)) {
+    setTrialPurchaseMessage("Your trial email is missing. Please return to the free-trial page and enter it again.", "bad");
+    return;
+  }
+
+  setTrialPurchaseMessage("");
+  setTrialStripeMessage();
+  setTrialPurchaseSheetOpen(true);
+  setTrialPurchaseLoading(true);
+  els.purchaseCta.disabled = true;
+  try {
+    await prepareTrialPurchaseElements();
+    window.CircuitWashAnalytics?.track("trial_checkout_started", {
+      source: "trial-completion-offer",
+      auth_state: "authenticated",
+      trial_eligibility: "used"
+    }, { once: "trial_checkout_started" });
+  } catch (error) {
+    resetTrialPurchaseElements();
+    setTrialPurchaseSheetOpen(false);
+    setTrialPurchaseMessage(error.message || "Secure checkout could not be opened. Please try again.", "bad");
+  } finally {
+    els.purchaseCta.disabled = false;
+  }
+}
+
+function getTrialPurchaseAnalyticsId(storage, key) {
+  try {
+    let value = storage.getItem(key);
+    if (!value) {
+      value = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      storage.setItem(key, value);
+    }
+    return value;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function createTrialPurchaseIntent() {
+  if (!currentSite) throw new Error("The laundry room could not be found.");
+  const customerEmail = getTrialPurchaseEmail();
+  if (!isValidTrialPurchaseEmail(customerEmail)) throw new Error("Enter a valid email address.");
+  return trialCheckoutRequest({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "create_payment_intent",
+      siteId: currentSite.id,
+      customerEmail,
+      analyticsVisitorId: getTrialPurchaseAnalyticsId(localStorage, ANALYTICS_VISITOR_KEY),
+      analyticsSessionId: getTrialPurchaseAnalyticsId(sessionStorage, ANALYTICS_SESSION_KEY)
+    })
+  });
+}
+
+function trialPurchaseReturnUrl() {
+  return `${location.origin}/trial-activate.html?trialCheckout=return`;
+}
+
+async function confirmTrialPurchase({ wallet = false } = {}) {
+  if (!trialPurchaseStripe || !trialPurchaseElements || trialPurchaseBusy) return;
+  trialPurchaseBusy = true;
+  els.trialStripeSubmit.disabled = true;
+  els.trialStripeSubmit.textContent = "Processing payment…";
+  setTrialStripeMessage("Confirming payment…");
+  try {
+    const submitted = await trialPurchaseElements.submit();
+    if (submitted?.error) throw submitted.error;
+    const intent = await createTrialPurchaseIntent();
+    const confirmParams = { return_url: trialPurchaseReturnUrl() };
+    if (!wallet) {
+      confirmParams.payment_method_data = { billing_details: { email: getTrialPurchaseEmail() } };
+    }
+    const result = await trialPurchaseStripe.confirmPayment({
+      elements: trialPurchaseElements,
+      clientSecret: intent.clientSecret,
+      confirmParams,
+      redirect: "if_required"
+    });
+    if (result.error) throw result.error;
+    if (result.paymentIntent?.status === "succeeded") {
+      await completeTrialPurchase(result.paymentIntent.id);
+    } else {
+      setTrialStripeMessage("Payment is still processing. Please wait a moment and try again.", "bad");
+    }
+  } catch (error) {
+    setTrialStripeMessage(error.message || "Your payment could not be completed. Please try again.", "bad");
+  } finally {
+    trialPurchaseBusy = false;
+    els.trialStripeSubmit.disabled = !trialPurchaseReady;
+    els.trialStripeSubmit.textContent = trialPurchaseConfig
+      ? `Activate access - ${formatTrialPurchaseMoney(trialPurchaseTotal())}`
+      : "Pay securely";
+  }
+}
+
+function saveTrialPurchase(result) {
+  const purchase = {
+    code: String(result.code || ""),
+    orderId: String(result.orderId || ""),
+    email: String(result.email || getTrialPurchaseEmail() || ""),
+    emailSent: Boolean(result.emailSent),
+    emailStatus: String(result.emailStatus || ""),
+    amount: String(result.amount || ""),
+    subtotal: String(result.subtotal || ""),
+    discountAmount: String(result.discountAmount || ""),
+    promoCode: String(result.promoCode || ""),
+    accessTerm: String(result.accessTerm || ""),
+    maxTotalUses: result.maxTotalUses ? Number(result.maxTotalUses) : null,
+    deleteAfterUse: Boolean(result.deleteAfterUse),
+    site: result.site || currentSite || {},
+    savedAt: new Date().toISOString()
+  };
+  try {
+    localStorage.setItem(PURCHASE_STORAGE_KEY, JSON.stringify(purchase));
+    localStorage.setItem(ACTIVATE_SESSION_KEY, purchase.code);
+    localStorage.setItem(EMAIL_STORAGE_KEY, purchase.email);
+  } catch (_) {}
+  return purchase;
+}
+
+function showTrialPurchaseSuccess(result) {
+  const purchase = saveTrialPurchase(result);
+  setTrialPurchaseSheetOpen(false);
+  setTrialPurchaseMessage("");
+  els.purchaseOfferContent.classList.add("hidden");
+  els.purchaseResult.classList.remove("hidden");
+  els.accessOffer.setAttribute("aria-labelledby", "trialPurchaseResultTitle");
+  els.purchasedCodeValue.textContent = purchase.code;
+  els.purchasedCodeHint.textContent = "Tap to copy";
+  els.purchaseEmailStatus.textContent = purchase.emailSent
+    ? `Code emailed to ${purchase.email} and saved on this device.`
+    : `Code saved on this device. Email delivery to ${purchase.email} was not confirmed.`;
+  els.purchaseUseCode.href = "/activate.html";
+  window.CircuitWashAnalytics?.track("trial_converted_to_paid", {
+    source: "trial-completion-offer",
+    auth_state: "authenticated",
+    trial_eligibility: "used"
+  }, { once: `trial_converted_to_paid:${purchase.orderId || "purchase"}` });
+}
+
+async function completeTrialPurchase(paymentIntentId) {
+  setTrialPurchaseMessage("Creating your access code…");
+  setTrialStripeMessage("Creating your access code…");
+  const result = await trialCheckoutRequest({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "complete_payment_intent", paymentIntentId })
+  });
+  try { history.replaceState({}, "", "/trial-activate.html"); } catch (_) {}
+  showTrialPurchaseSuccess(result);
+}
+
+async function restoreTrialPurchaseReturn() {
+  const params = new URLSearchParams(location.search);
+  const paymentIntentId = String(params.get("payment_intent") || "");
+  if (params.get("trialCheckout") !== "return" || !paymentIntentId) return;
+  els.purchaseCta.disabled = true;
+  setTrialPurchaseMessage("Confirming your payment…");
+  try {
+    await completeTrialPurchase(paymentIntentId);
+  } catch (error) {
+    setTrialPurchaseMessage(error.message || "Payment was received, but the access code could not be displayed. Please contact support.", "bad");
+  } finally {
+    els.purchaseCta.disabled = false;
+  }
 }
 
 function showActivationOutcome(state, context = {}) {
@@ -272,6 +745,7 @@ function showActivationOutcome(state, context = {}) {
   els.controls.classList.add("hidden");
   els.outcome.classList.remove("hidden");
   els.outcome.dataset.state = state;
+  els.root.classList.add("trial-outcome-active");
   els.root.classList.toggle("post-activation-success", state === "success");
   els.changeSite.disabled = true;
   els.outcomeCycle.textContent = details.cycleSummary;
@@ -318,7 +792,7 @@ function applySession(data) {
   els.title.title = siteName;
   machines = Array.isArray(data.machines) ? data.machines : [];
   selectedMachineKey = machines.length ? machineKey(machines[0]) : "";
-  saveClaim({ ...claim, token: trialToken, site: data.site, used: Boolean(data.used), activatedAt: data.activatedAt || claim?.activatedAt || null, activation: data.activation || claim?.activation || null });
+  saveClaim({ ...claim, token: trialToken, site: data.site, email: data.email || claim?.email || "", used: Boolean(data.used), activatedAt: data.activatedAt || claim?.activatedAt || null, activation: data.activation || claim?.activation || null });
   renderContinuationPrompt();
   if (data.used) {
     showActivationOutcome("success", { activation: data.activation, activatedAt: data.activatedAt });
@@ -331,6 +805,7 @@ function applySession(data) {
   els.loading.classList.add("hidden");
   els.error.classList.add("hidden");
   els.outcome.classList.add("hidden");
+  els.root.classList.remove("trial-outcome-active");
   els.root.classList.remove("post-activation-success");
   els.controls.classList.remove("hidden");
   els.changeSite.disabled = false;
@@ -912,6 +1387,7 @@ async function init() {
   }
   try {
     applySession(await api("session"));
+    await restoreTrialPurchaseReturn();
   } catch (error) {
     if (error.code === "trial_not_found") {
       try { localStorage.removeItem(TRIAL_CLAIM_KEY); } catch (_) {}
@@ -921,10 +1397,31 @@ async function init() {
 }
 
 els.connect.addEventListener("click", connect);
+els.purchaseCta.addEventListener("click", beginTrialPurchase);
+els.trialPaymentSheetClose.addEventListener("click", closeTrialPurchaseSheet);
+trialPurchasePaymentRoot.querySelectorAll("[data-close-trial-payment-sheet]").forEach((element) => element.addEventListener("click", closeTrialPurchaseSheet));
+els.trialCardPaymentToggle.addEventListener("click", () => {
+  if (!trialPurchaseWalletAvailable) return;
+  setTrialPurchaseCardExpanded(!trialPurchaseCardExpanded);
+});
+els.trialStripePaymentForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  confirmTrialPurchase();
+});
+els.purchasedCode.addEventListener("click", async () => {
+  const code = els.purchasedCodeValue.textContent.trim();
+  try {
+    await navigator.clipboard.writeText(code);
+    els.purchasedCodeHint.textContent = "Copied";
+  } catch (_) {
+    els.purchasedCodeHint.textContent = "Press and hold to copy";
+  }
+});
 els.outcomeRetry.addEventListener("click", () => {
   completed = false;
   currentOutcomeContext = null;
   els.outcome.classList.add("hidden");
+  els.root.classList.remove("trial-outcome-active");
   els.root.classList.remove("post-activation-success");
   els.controls.classList.remove("hidden");
   els.trialPill.classList.remove("hidden");
@@ -951,7 +1448,8 @@ els.search.addEventListener("input", () => {
 els.search.addEventListener("keydown", (event) => trialSiteSelector.handleKeydown(event));
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (!els.machinePicker.classList.contains("hidden")) closeMachinePicker();
+  if (!els.trialPaymentSheet.classList.contains("hidden")) closeTrialPurchaseSheet();
+  else if (!els.machinePicker.classList.contains("hidden")) closeMachinePicker();
   else if (!els.modal.classList.contains("hidden")) closeSiteModal();
 });
 document.querySelectorAll("[data-ios-bluefy]").forEach((element) => {

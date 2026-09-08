@@ -17,6 +17,8 @@ let upgradeElements = null;
 let upgradePaymentElement = null;
 let upgradeExpressElement = null;
 let upgradePaymentReady = false;
+let upgradeCardReady = false;
+let upgradeExpressReady = false;
 let upgradeWalletAvailable = false;
 let upgradeCardExpanded = true;
 let iosBluefyPromptRequested = false;
@@ -333,7 +335,7 @@ function machineTypeLabel(machine) {
 function machineIconMarkup(machine) {
   const type = machineType(machine);
   if (type === "washer" || type === "dryer") {
-    return `<img class="machine-image machine-image-${type}" src="/assets/${type}.png" alt="" aria-hidden="true" draggable="false">`;
+    return `<img class="machine-image machine-image-${type}" src="/assets/${type}.svg" alt="" aria-hidden="true" draggable="false">`;
   }
   return '<svg class="machine-symbol" viewBox="0 0 32 32" aria-hidden="true"><rect x="5.5" y="3" width="21" height="26" rx="4"></rect><path d="M6 10.5h20"></path><circle cx="10.5" cy="7" r="1"></circle><path d="M15 7h7"></path><circle cx="16" cy="19.5" r="7"></circle></svg>';
 }
@@ -699,6 +701,8 @@ function resetUpgradePaymentElements() {
   upgradePaymentElement = null;
   upgradeExpressElement = null;
   upgradePaymentReady = false;
+  upgradeCardReady = false;
+  upgradeExpressReady = false;
 }
 
 function upgradeStripeAppearance() {
@@ -734,12 +738,6 @@ function upgradeWalletPaymentMethods() {
   };
 }
 
-function revealUpgradePaymentForm() {
-  upgradePaymentReady = true;
-  els.upgradePaymentSubmitBtn.disabled = false;
-  setUpgradePaymentLoading(false);
-}
-
 function updateUpgradeExpressCheckoutVisibility(event = {}) {
   const methods = event.availablePaymentMethods || event.paymentMethods || {};
   const hasWallet = Boolean(methods && Object.values(methods).some(Boolean));
@@ -748,6 +746,17 @@ function updateUpgradeExpressCheckoutVisibility(event = {}) {
   els.upgradeExpressCheckout.classList.toggle("hidden", !hasWallet);
   els.upgradePaymentDivider.classList.toggle("hidden", !hasWallet);
   setUpgradeCardExpanded(!hasWallet);
+}
+
+function markUpgradePaymentReady() {
+  if (upgradePaymentReady || !upgradeCardReady || !upgradeExpressReady) return;
+  const readyElements = upgradeElements;
+  window.setTimeout(() => {
+    if (upgradePaymentReady || upgradeElements !== readyElements || !upgradeCardReady || !upgradeExpressReady) return;
+    upgradePaymentReady = true;
+    els.upgradePaymentSubmitBtn.disabled = false;
+    setUpgradePaymentLoading(false);
+  }, 120);
 }
 
 async function prepareUpgradePaymentElements() {
@@ -785,26 +794,25 @@ async function prepareUpgradePaymentElements() {
     buttonHeight: 54,
     buttonTheme: { applePay: "black", googlePay: "black" }
   });
-  upgradeExpressElement.on("ready", updateUpgradeExpressCheckoutVisibility);
+  upgradeExpressElement.on("ready", (event) => {
+    updateUpgradeExpressCheckoutVisibility(event);
+    upgradeExpressReady = true;
+    window.requestAnimationFrame(markUpgradePaymentReady);
+  });
   upgradeExpressElement.on("availablepaymentmethodschange", updateUpgradeExpressCheckoutVisibility);
   upgradeExpressElement.on("confirm", () => confirmUpgradePayment({ skipSubmit: true }));
   upgradeExpressElement.mount(els.upgradeExpressCheckoutElement);
 
   upgradePaymentElement = upgradeElements.create("payment", { layout: { type: "tabs", defaultCollapsed: false } });
-  upgradePaymentElement.on("ready", revealUpgradePaymentForm);
+  upgradePaymentElement.on("ready", () => {
+    upgradeCardReady = true;
+    markUpgradePaymentReady();
+  });
   upgradePaymentElement.on("change", (event) => {
     if (event.error) setUpgradePaymentMessage(event.error.message, "bad");
     else if (els.upgradePaymentMessage.classList.contains("bad")) setUpgradePaymentMessage();
   });
   upgradePaymentElement.mount(els.upgradePaymentElement);
-
-  // Stripe can defer the ready event when Elements mounts behind the shared
-  // pay-page loading state. Reveal the mounted fields so the iframe can finish
-  // laying itself out; the normal ready handler remains the primary path.
-  const mountedElements = upgradeElements;
-  window.setTimeout(() => {
-    if (!upgradePaymentReady && upgradeElements === mountedElements) revealUpgradePaymentForm();
-  }, 650);
 }
 
 async function beginActivationUpgrade() {
