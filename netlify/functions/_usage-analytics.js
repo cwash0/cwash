@@ -1,8 +1,31 @@
 const { normalizePeriod, paidSiteLocations } = require("./_paid-growth-analytics");
 
+const BLUETOOTH_FAILURE_EVENTS = [
+  "bluetooth_connection_failed",
+  "bluetooth_activation_failed",
+  "bluetooth_unexpected_disconnect"
+];
+
 function number(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function emptyBluetoothFailures() {
+  return {
+    summary: {
+      totalFailures: 0,
+      connectionFailures: 0,
+      activationFailures: 0,
+      unexpectedDisconnects: 0,
+      affectedSessions: 0,
+      affectedSites: 0,
+      affectedMachines: 0,
+      latestFailureAt: null
+    },
+    stages: [],
+    recent: []
+  };
 }
 
 function emptyUsage(period, locations) {
@@ -17,14 +40,19 @@ function emptyUsage(period, locations) {
     summary: {},
     history: [],
     cities: [],
-    sites: []
+    sites: [],
+    bluetoothFailures: emptyBluetoothFailures()
   };
 }
 
 async function getUsageAnalytics({ pool, publicSites, periodDays }) {
   const period = normalizePeriod(periodDays);
   const locations = paidSiteLocations(publicSites);
-  if (!locations.length) return emptyUsage(period, locations);
+  if (!locations.length) {
+    const usage = emptyUsage(period, locations);
+    usage.bluetoothFailures = await getBluetoothFailureAnalytics({ pool, period, locations });
+    return usage;
+  }
 
   const tableResult = await pool.query(`
     select
@@ -35,7 +63,11 @@ async function getUsageAnalytics({ pool, publicSites, periodDays }) {
   const tables = tableResult.rows[0] || {};
   const hasCodeUsage = Boolean(tables.access_codes_exists && tables.code_usage_exists);
   const hasTrialUsage = Boolean(tables.trial_usage_exists);
-  if (!hasCodeUsage && !hasTrialUsage) return emptyUsage(period, locations);
+  if (!hasCodeUsage && !hasTrialUsage) {
+    const usage = emptyUsage(period, locations);
+    usage.bluetoothFailures = await getBluetoothFailureAnalytics({ pool, period, locations });
+    return usage;
+  }
 
   const params = [
     locations.map((site) => site.siteId),
@@ -45,7 +77,7 @@ async function getUsageAnalytics({ pool, publicSites, periodDays }) {
     period.days
   ];
   const ctes = usageCtes({ hasCodeUsage, hasTrialUsage });
-  const [siteResult, historyResult] = await Promise.all([
+  const [siteResult, historyResult, bluetoothFailures] = await Promise.all([
     pool.query(`
       with ${ctes}
       select
@@ -71,7 +103,8 @@ async function getUsageAnalytics({ pool, publicSites, periodDays }) {
       where coalesce(code_site.total_activations, 0) + coalesce(trial_site.total_activations, 0) > 0
       order by period_activations desc, total_activations desc, locations.site_name
     `, params),
-    pool.query(usageHistoryQuery(ctes, period, { hasCodeUsage, hasTrialUsage }), params)
+    pool.query(usageHistoryQuery(ctes, period, { hasCodeUsage, hasTrialUsage }), params),
+    getBluetoothFailureAnalytics({ pool, period, locations })
   ]);
 
   const sites = siteResult.rows.map(mapSiteRow);
@@ -124,7 +157,118 @@ async function getUsageAnalytics({ pool, publicSites, periodDays }) {
       sitesUsed: number(row.sites_used)
     })),
     cities,
-    sites
+    sites,
+    bluetoothFailures
+  };
+}
+
+async function getBluetoothFailureAnalytics({ pool, period, locations }) {
+  const tableResult = await pool.query(`select to_regclass('public.funnel_events') as table_name`);
+  if (!tableResult.rows[0]?.table_name) return emptyBluetoothFailures();
+
+  const requiredColumns = [
+    "site_id",
+    "site_name",
+    "machine_id",
+    "machine_name",
+    "bluetooth_device_name",
+    "failure_stage",
+    "error_code",
+    "error_message"
+  ];
+  const columnResult = await pool.query(`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'funnel_events'
+      and column_name = any($1::text[])
+  `, [requiredColumns]);
+  if (columnResult.rows.length !== requiredColumns.length) return emptyBluetoothFailures();
+
+  const periodClause = period.key === "all"
+    ? "and $2::int >= 0"
+    : "and created_at >= now() - ($2::int * interval '1 day')";
+  const filters = `
+    event_name = any($1::text[])
+    and is_bot = false
+    and is_test = false
+    and environment = 'production'
+    ${periodClause}
+  `;
+  const queryParams = [BLUETOOTH_FAILURE_EVENTS, period.days];
+  const [summaryResult, stageResult, recentResult] = await Promise.all([
+    pool.query(`
+      select
+        count(*)::int as total_failures,
+        count(*) filter (where event_name = 'bluetooth_connection_failed')::int as connection_failures,
+        count(*) filter (where event_name = 'bluetooth_activation_failed')::int as activation_failures,
+        count(*) filter (where event_name = 'bluetooth_unexpected_disconnect')::int as unexpected_disconnects,
+        count(distinct session_hash)::int as affected_sessions,
+        count(distinct nullif(site_id, ''))::int as affected_sites,
+        count(distinct nullif(machine_id, ''))::int as affected_machines,
+        max(created_at) as latest_failure_at
+      from funnel_events
+      where ${filters}
+    `, queryParams),
+    pool.query(`
+      select
+        event_name,
+        coalesce(nullif(failure_stage, ''), 'unknown') as failure_stage,
+        count(*)::int as failures,
+        max(created_at) as latest_failure_at
+      from funnel_events
+      where ${filters}
+      group by event_name, coalesce(nullif(failure_stage, ''), 'unknown')
+      order by failures desc, latest_failure_at desc
+    `, queryParams),
+    pool.query(`
+      select
+        event_name, source, device_type, site_id, site_name, machine_id, machine_name,
+        bluetooth_device_name, failure_stage, error_code, error_message, created_at
+      from funnel_events
+      where ${filters}
+      order by created_at desc
+      limit 100
+    `, queryParams)
+  ]);
+
+  const locationById = new Map(locations.map((location) => [location.siteId, location]));
+  const summary = summaryResult.rows[0] || {};
+  return {
+    summary: {
+      totalFailures: number(summary.total_failures),
+      connectionFailures: number(summary.connection_failures),
+      activationFailures: number(summary.activation_failures),
+      unexpectedDisconnects: number(summary.unexpected_disconnects),
+      affectedSessions: number(summary.affected_sessions),
+      affectedSites: number(summary.affected_sites),
+      affectedMachines: number(summary.affected_machines),
+      latestFailureAt: summary.latest_failure_at || null
+    },
+    stages: stageResult.rows.map((row) => ({
+      eventName: row.event_name,
+      stage: row.failure_stage,
+      failures: number(row.failures),
+      latestFailureAt: row.latest_failure_at || null
+    })),
+    recent: recentResult.rows.map((row) => {
+      const location = locationById.get(String(row.site_id || ""));
+      return {
+        eventName: row.event_name,
+        source: row.source,
+        deviceType: row.device_type,
+        siteId: row.site_id,
+        siteName: location?.siteName || row.site_name || row.site_id || "Unknown site",
+        city: location?.city || "",
+        machineId: row.machine_id,
+        machineName: row.machine_name,
+        bluetoothDeviceName: row.bluetooth_device_name,
+        stage: row.failure_stage || "unknown",
+        errorCode: row.error_code || "unknown_error",
+        errorMessage: row.error_message || "No browser error detail was available.",
+        createdAt: row.created_at
+      };
+    })
   };
 }
 

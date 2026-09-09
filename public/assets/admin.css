@@ -610,10 +610,17 @@ button.ramp-row:hover { background: var(--surface-2); }
 .paid-market-row small { color: var(--muted); font-size: .58rem; }
 .market-empty { min-height: 140px; display: grid; place-items: center; }
 .paid-performance-panel { margin-bottom: 16px; }
-.growth-history-panel, .paid-market-panel, .usage-history-panel, .usage-performance-panel { margin-bottom: 16px; }
+.growth-history-panel, .paid-market-panel, .usage-history-panel, .usage-performance-panel, .bluetooth-failure-panel { margin-bottom: 16px; }
 .growth-history-panel th:nth-child(n+2), .growth-history-panel td:nth-child(n+2), .usage-history-panel th:nth-child(n+2), .usage-history-panel td:nth-child(n+2), .usage-performance-panel th:nth-child(n+2), .usage-performance-panel td:nth-child(n+2) { text-align: right; }
 .growth-history-panel tbody tr:first-child, .usage-history-panel tbody tr:first-child { background: #f5faf9; }
 .usage-performance-panel td:first-child strong { display: block; }
+.bluetooth-failure-summary { margin: 0 0 12px; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.bluetooth-failure-kpis { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; margin-bottom: 14px; }
+.bluetooth-failure-kpis > div { min-width: 0; padding: 10px 11px; border: 1px solid #e0e7ec; border-radius: 7px; background: #f8fafb; }
+.bluetooth-failure-kpis span { display: block; min-height: 2.4em; color: var(--muted); font-size: .61rem; font-weight: 740; line-height: 1.25; }
+.bluetooth-failure-kpis strong { display: block; margin-top: 5px; color: var(--ink); font-size: 1.25rem; letter-spacing: -.03em; }
+.bluetooth-failure-panel td:nth-child(6) { min-width: 230px; max-width: 360px; white-space: normal; line-height: 1.35; }
+.bluetooth-failure-panel td:first-child, .bluetooth-failure-panel td:last-child { white-space: nowrap; }
 .paid-performance-panel th:nth-child(n+2), .paid-performance-panel td:nth-child(n+2), .paid-sites-detail th:nth-child(n+3), .paid-sites-detail td:nth-child(n+3) { text-align: right; }
 .paid-performance-panel th:last-child, .paid-performance-panel td:last-child, .paid-sites-detail th:last-child, .paid-sites-detail td:last-child { white-space: nowrap; }
 .table-subline { display: block; margin-top: 2px; color: var(--muted); font-size: .57rem; font-weight: 500; }
@@ -628,6 +635,7 @@ button.ramp-row:hover { background: var(--surface-2); }
 
 @media (max-width: 1180px) {
   .paid-growth-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .bluetooth-failure-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .network-kpi-grid, .spread-metric-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .coverage-summary { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .support-data-grid { grid-template-columns: 1fr; }
@@ -674,6 +682,7 @@ button.ramp-row:hover { background: var(--surface-2); }
 
 @media (max-width: 640px) {
   .paid-growth-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .bluetooth-failure-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .growth-kpi { min-height: 112px; padding: 12px; }
   .paid-growth-source { align-items: flex-start; flex-wrap: wrap; }
   .usage-definition { align-items: flex-start; flex-wrap: wrap; }

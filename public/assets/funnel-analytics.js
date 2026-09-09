@@ -75,6 +75,14 @@
       visitor_id: storedId(localStorage, VISITOR_KEY),
       auth_state: String(dimensions.auth_state || inferredAuthState()),
       trial_eligibility: String(dimensions.trial_eligibility || inferredTrialEligibility()),
+      site_id: String(dimensions.site_id || ""),
+      site_name: String(dimensions.site_name || ""),
+      machine_id: String(dimensions.machine_id || ""),
+      machine_name: String(dimensions.machine_name || ""),
+      bluetooth_device_name: String(dimensions.bluetooth_device_name || ""),
+      failure_stage: String(dimensions.failure_stage || ""),
+      error_code: String(dimensions.error_code || ""),
+      error_message: String(dimensions.error_message || ""),
       webdriver: Boolean(navigator.webdriver)
     };
     const body = JSON.stringify(payload);

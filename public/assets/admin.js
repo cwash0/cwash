@@ -50,7 +50,7 @@ const els = {
   recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), orderTypeBreakdown: $("orderTypeBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
   reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsRange: $("analyticsRange"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsPeriodMetric: $("analyticsPeriodMetric"), analyticsPeriodSub: $("analyticsPeriodSub"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsNoOrderSub: $("analyticsNoOrderSub"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsDataQuality: $("analyticsDataQuality"), analyticsTrendSummary: $("analyticsTrendSummary"), analyticsDemandTrend: $("analyticsDemandTrend"), analyticsActivationTrend: $("analyticsActivationTrend"), analyticsTopSites: $("analyticsTopSites"), analyticsTopSearches: $("analyticsTopSearches"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), analyticsHitsPageStatus: $("analyticsHitsPageStatus"), analyticsHitsPrev: $("analyticsHitsPrev"), analyticsHitsNext: $("analyticsHitsNext"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
   growthRange: $("growthRange"), refreshGrowthBtn: $("refreshGrowthBtn"), paidGrowthSummary: $("paidGrowthSummary"), paidCustomersMetric: $("paidCustomersMetric"), paidCustomersSub: $("paidCustomersSub"), newPaidCustomersMetric: $("newPaidCustomersMetric"), newPaidCustomersSub: $("newPaidCustomersSub"), paidRevenueMetric: $("paidRevenueMetric"), paidRevenueSub: $("paidRevenueSub"), paidOrdersMetric: $("paidOrdersMetric"), paidOrdersSub: $("paidOrdersSub"), paidCitiesMetric: $("paidCitiesMetric"), paidCitiesSub: $("paidCitiesSub"), paidSitesMetric: $("paidSitesMetric"), paidSitesSub: $("paidSitesSub"), growthHistorySummary: $("growthHistorySummary"), growthHistoryRows: $("growthHistoryRows"), newPaidMarkets: $("newPaidMarkets"), cityPerformanceCount: $("cityPerformanceCount"), paidCityRows: $("paidCityRows"), paidSiteRows: $("paidSiteRows"),
-  usageAnalyticsSummary: $("usageAnalyticsSummary"), totalActivationsMetric: $("totalActivationsMetric"), periodActivationsMetric: $("periodActivationsMetric"), usageCitiesMetric: $("usageCitiesMetric"), usageCitiesSub: $("usageCitiesSub"), usageSitesMetric: $("usageSitesMetric"), usageSitesSub: $("usageSitesSub"), paidActivationsMetric: $("paidActivationsMetric"), paidActivationsSub: $("paidActivationsSub"), trialActivationsMetric: $("trialActivationsMetric"), trialActivationsSub: $("trialActivationsSub"), usageHistoryRows: $("usageHistoryRows"), usageCityCount: $("usageCityCount"), usageCityRows: $("usageCityRows"), usageSiteCount: $("usageSiteCount"), usageSiteRows: $("usageSiteRows"),
+  usageAnalyticsSummary: $("usageAnalyticsSummary"), totalActivationsMetric: $("totalActivationsMetric"), periodActivationsMetric: $("periodActivationsMetric"), usageCitiesMetric: $("usageCitiesMetric"), usageCitiesSub: $("usageCitiesSub"), usageSitesMetric: $("usageSitesMetric"), usageSitesSub: $("usageSitesSub"), paidActivationsMetric: $("paidActivationsMetric"), paidActivationsSub: $("paidActivationsSub"), trialActivationsMetric: $("trialActivationsMetric"), trialActivationsSub: $("trialActivationsSub"), usageHistoryRows: $("usageHistoryRows"), usageCityCount: $("usageCityCount"), usageCityRows: $("usageCityRows"), usageSiteCount: $("usageSiteCount"), usageSiteRows: $("usageSiteRows"), bluetoothFailureSummary: $("bluetoothFailureSummary"), bluetoothFailureLatest: $("bluetoothFailureLatest"), bluetoothFailureTotal: $("bluetoothFailureTotal"), bluetoothActivationFailures: $("bluetoothActivationFailures"), bluetoothConnectionFailures: $("bluetoothConnectionFailures"), bluetoothUnexpectedDisconnects: $("bluetoothUnexpectedDisconnects"), bluetoothAffectedSessions: $("bluetoothAffectedSessions"), bluetoothAffectedSites: $("bluetoothAffectedSites"), bluetoothFailureRows: $("bluetoothFailureRows"),
   networkOverviewSummary: $("networkOverviewSummary"), networkActiveUsers: $("networkActiveUsers"), networkActiveUsersDelta: $("networkActiveUsersDelta"), networkNewUsers: $("networkNewUsers"), networkNewUsersDelta: $("networkNewUsersDelta"), networkRepresentedCities: $("networkRepresentedCities"), networkNewCities: $("networkNewCities"), networkNewCitiesDelta: $("networkNewCitiesDelta"), networkActivatedCities: $("networkActivatedCities"), networkActivatedSample: $("networkActivatedSample"), networkActivationRate: $("networkActivationRate"), networkActivationDelta: $("networkActivationDelta"),
   spreadBalance: $("spreadBalance"), breadthDepthSummary: $("breadthDepthSummary"), cityLifecycleStrip: $("cityLifecycleStrip"), cityCoverageSummary: $("cityCoverageSummary"), cityLocationCoverage: $("cityLocationCoverage"), cityCoverageTrend: $("cityCoverageTrend"), cityLifecycleFunnel: $("cityLifecycleFunnel"), newCitiesList: $("newCitiesList"),
   observedSpreadRate: $("observedSpreadRate"), observedSpreadRateDelta: $("observedSpreadRateDelta"), boundaryCrossingRatio: $("boundaryCrossingRatio"), boundaryCrossingDelta: $("boundaryCrossingDelta"), cityTakeoffRate: $("cityTakeoffRate"), medianSecondUser: $("medianSecondUser"), medianSecondUserDelta: $("medianSecondUserDelta"), medianActivation: $("medianActivation"), medianSeedInterval: $("medianSeedInterval"), medianSeedIntervalDelta: $("medianSeedIntervalDelta"), newCitySeedTrend: $("newCitySeedTrend"), growthBalanceTrend: $("growthBalanceTrend"), cityRampCurves: $("cityRampCurves"), cityBenchmarks: $("cityBenchmarks"), cityCoverageRows: $("cityCoverageRows"), existingCityGrowthRows: $("existingCityGrowthRows"), cityDepthDistribution: $("cityDepthDistribution"), cityMigrations: $("cityMigrations"), cityConcentration: $("cityConcentration"), cityCohortRows: $("cityCohortRows"),
@@ -982,6 +982,8 @@ async function loadUsageAnalytics() {
     els.usageHistoryRows.innerHTML = `<tr><td colspan="6" class="muted">${message}</td></tr>`;
     els.usageCityRows.innerHTML = `<tr><td colspan="8" class="muted">${message}</td></tr>`;
     els.usageSiteRows.innerHTML = `<tr><td colspan="8" class="muted">${message}</td></tr>`;
+    els.bluetoothFailureSummary.innerHTML = `<span class="growth-error">${message}</span>`;
+    els.bluetoothFailureRows.innerHTML = `<tr><td colspan="7" class="muted">${message}</td></tr>`;
   }
 }
 
@@ -990,6 +992,9 @@ function setUsageLoading() {
   els.usageHistoryRows.innerHTML = '<tr><td colspan="6" class="muted">Loading usage history…</td></tr>';
   els.usageCityRows.innerHTML = '<tr><td colspan="8" class="muted">Loading city usage…</td></tr>';
   els.usageSiteRows.innerHTML = '<tr><td colspan="8" class="muted">Loading site usage…</td></tr>';
+  els.bluetoothFailureSummary.textContent = "Loading Bluetooth failure reports…";
+  els.bluetoothFailureLatest.textContent = "";
+  els.bluetoothFailureRows.innerHTML = '<tr><td colspan="7" class="muted">Loading Bluetooth failure reports…</td></tr>';
 }
 
 function renderUsageAnalytics(data) {
@@ -1012,6 +1017,7 @@ function renderUsageAnalytics(data) {
   renderUsageHistory(data.history || []);
   renderUsageCityRows(data.cities || []);
   renderUsageSiteRows(data.sites || []);
+  renderBluetoothFailures(data.bluetoothFailures || {}, periodLabel);
 }
 
 function renderUsageHistory(history) {
@@ -1075,6 +1081,79 @@ function renderUsageSiteRows(sites) {
     appendCell(tr, formatDate(site.lastUsedAt));
     els.usageSiteRows.appendChild(tr);
   });
+}
+
+function renderBluetoothFailures(data, periodLabel) {
+  const summary = data.summary || {};
+  const stages = data.stages || [];
+  const recent = data.recent || [];
+  const total = Number(summary.totalFailures) || 0;
+  const topStage = stages[0];
+  els.bluetoothFailureTotal.textContent = formatNumber(total);
+  els.bluetoothActivationFailures.textContent = formatNumber(summary.activationFailures);
+  els.bluetoothConnectionFailures.textContent = formatNumber(summary.connectionFailures);
+  els.bluetoothUnexpectedDisconnects.textContent = formatNumber(summary.unexpectedDisconnects);
+  els.bluetoothAffectedSessions.textContent = formatNumber(summary.affectedSessions);
+  els.bluetoothAffectedSites.textContent = formatNumber(summary.affectedSites);
+  els.bluetoothFailureLatest.textContent = summary.latestFailureAt ? `Latest ${formatDateTime(summary.latestFailureAt)}` : "No reports yet";
+  els.bluetoothFailureSummary.textContent = total
+    ? `${formatNumber(total)} Bluetooth failure report${total === 1 ? "" : "s"} in ${periodLabel.toLowerCase()} from ${formatNumber(summary.affectedSessions)} session${Number(summary.affectedSessions) === 1 ? "" : "s"} across ${formatNumber(summary.affectedSites)} site${Number(summary.affectedSites) === 1 ? "" : "s"} and ${formatNumber(summary.affectedMachines)} machine${Number(summary.affectedMachines) === 1 ? "" : "s"}.${topStage ? ` Most common stage: ${bluetoothStageLabel(topStage.stage)} (${formatNumber(topStage.failures)}).` : ""}`
+    : `No Bluetooth failures have been reported in ${periodLabel.toLowerCase()}. Collection starts when this release reaches users.`;
+
+  els.bluetoothFailureRows.replaceChildren();
+  if (!recent.length) {
+    els.bluetoothFailureRows.innerHTML = '<tr><td colspan="7" class="muted">No Bluetooth failures reported for this window.</td></tr>';
+    return;
+  }
+  recent.forEach((failure) => {
+    const tr = document.createElement("tr");
+    appendCell(tr, formatDateTime(failure.createdAt));
+    appendCell(tr, bluetoothFailureTypeLabel(failure.eventName));
+
+    const site = document.createElement("td");
+    const siteName = document.createElement("strong"); siteName.textContent = failure.siteName || failure.siteId || "Unknown site";
+    const city = document.createElement("small"); city.className = "table-subline"; city.textContent = failure.city || failure.siteId || "Site not captured";
+    site.append(siteName, city); tr.appendChild(site);
+
+    const machine = document.createElement("td");
+    const machineName = document.createElement("strong"); machineName.textContent = failure.machineName || failure.machineId || "Unknown machine";
+    const machineId = document.createElement("small"); machineId.className = "table-subline"; machineId.textContent = failure.machineId || "ID not captured";
+    machine.append(machineName, machineId); tr.appendChild(machine);
+
+    appendCell(tr, bluetoothStageLabel(failure.stage));
+    const error = document.createElement("td");
+    const errorCode = document.createElement("strong"); errorCode.textContent = titleCase(failure.errorCode || "unknown_error");
+    const errorMessage = document.createElement("small"); errorMessage.className = "table-subline"; errorMessage.textContent = failure.errorMessage || "No browser detail";
+    error.append(errorCode, errorMessage); tr.appendChild(error);
+    appendCell(tr, [titleCase(failure.deviceType || "unknown"), failure.bluetoothDeviceName].filter(Boolean).join(" · "));
+    els.bluetoothFailureRows.appendChild(tr);
+  });
+}
+
+function bluetoothFailureTypeLabel(eventName) {
+  if (eventName === "bluetooth_activation_failed") return "Activation";
+  if (eventName === "bluetooth_unexpected_disconnect") return "Disconnect";
+  return "Connection";
+}
+
+function bluetoothStageLabel(stage) {
+  const labels = {
+    api_unavailable: "Bluetooth unavailable",
+    secure_context: "Secure-context check",
+    device_request: "Device selection",
+    gatt_connect: "GATT connection",
+    service_discovery: "Service discovery",
+    tx_characteristic: "Command channel",
+    rx_notifications: "Response channel",
+    occupancy_check: "Occupancy check",
+    handshake: "Handshake",
+    version: "Version check",
+    coin_disable: "Coin control",
+    activation_ack: "Activation acknowledgement",
+    execution_ack: "Execution acknowledgement",
+    connected: "Connected / idle"
+  };
+  return labels[String(stage || "").toLowerCase()] || titleCase(stage || "unknown");
 }
 
 function comparisonText(current, previous, allTime, asMoney = false, currency = "GBP") {

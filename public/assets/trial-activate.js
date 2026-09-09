@@ -168,6 +168,8 @@ let bluefyCopyToastTimer = null;
 let machinePickerReturnFocus = null;
 let currentSite = null;
 let currentOutcomeContext = null;
+let bluetoothFailureStage = "idle";
+let unexpectedBluetoothDisconnectReported = false;
 let trialPurchaseConfig = null;
 let trialPurchaseStripe = null;
 let trialPurchaseElements = null;
@@ -242,6 +244,37 @@ function escapeHtml(value) {
 
 function machineKey(machine) {
   return String(machine?.id || machine?.name || "");
+}
+
+function reportBluetoothFailure(eventName, { stage, error, machine, bluetoothDeviceName } = {}) {
+  const tracker = window.CircuitWashAnalytics;
+  if (!tracker?.track) return;
+  const failure = error || new Error("Bluetooth operation failed");
+  const failureStage = String(stage || bluetoothFailureStage || "unknown");
+  const rawErrorCode = String(failure?.code || failure?.name || "");
+  tracker.track(eventName, {
+    source: "trial-activation",
+    auth_state: "anonymous",
+    trial_eligibility: "claimed",
+    site_id: String(currentSite?.id || ""),
+    site_name: String(currentSite?.name || ""),
+    machine_id: machineKey(machine),
+    machine_name: String(machine?.name || ""),
+    bluetooth_device_name: String(bluetoothDeviceName || connectedDeviceName || machine?.bluetoothName || ""),
+    failure_stage: failureStage,
+    error_code: !rawErrorCode || rawErrorCode === "Error" ? `${failureStage}_failed` : rawErrorCode,
+    error_message: String(failure?.message || failure || "Bluetooth operation failed")
+  });
+}
+
+function isBluetoothChooserCancellation(stage, error) {
+  if (stage !== "device_request") return false;
+  const errorName = String(error?.name || "").toLowerCase();
+  const errorMessage = String(error?.message || error || "").toLowerCase();
+  return errorName === "notfounderror" ||
+    errorName === "aborterror" ||
+    /\b(cancelled|canceled|cancel|dismissed)\b/.test(errorMessage) ||
+    errorMessage.includes("no device selected");
 }
 
 function selectedMachine() {
@@ -1045,8 +1078,12 @@ function isIOSDevice() {
 async function connect() {
   const machine = selectedMachine();
   if (!machine) return;
-  if (!window.isSecureContext) { setActivity("Open securely", "Use HTTPS or localhost", "warn"); return; }
+  if (!window.isSecureContext) {
+    reportBluetoothFailure("bluetooth_connection_failed", { stage: "secure_context", error: new Error("A secure browser context is required"), machine });
+    setActivity("Open securely", "Use HTTPS or localhost", "warn"); return;
+  }
   if (!navigator.bluetooth) {
+    reportBluetoothFailure("bluetooth_connection_failed", { stage: "api_unavailable", error: new Error("Web Bluetooth is unavailable in this browser"), machine });
     if (isIOSDevice()) {
       showIOSNote({ request: true });
       setActivity("Ready", "");
@@ -1058,22 +1095,36 @@ async function connect() {
     return;
   }
   els.connect.disabled = true;
+  let stage = "device_request";
+  unexpectedBluetoothDisconnectReported = false;
   try {
     resetMessages("Preparing new connection");
     setActivity("Connecting...", machine.name, "warn");
     setStatus(`connecting to ${machine.name}...`);
+    bluetoothFailureStage = stage;
     device = await navigator.bluetooth.requestDevice(bluetoothOptions(machine));
     connectedDeviceName = String(device.name || "");
     device.addEventListener("gattserverdisconnected", onDisconnected);
+    stage = "gatt_connect";
+    bluetoothFailureStage = stage;
     server = await device.gatt.connect();
+    stage = "service_discovery";
+    bluetoothFailureStage = stage;
     service = await server.getPrimaryService(SERVICE_UUID);
+    stage = "tx_characteristic";
+    bluetoothFailureStage = stage;
     txChar = await service.getCharacteristic(TX_UUID);
     try {
+      stage = "rx_notifications";
+      bluetoothFailureStage = stage;
       rxChar = await service.getCharacteristic(RX_UUID);
       await rxChar.startNotifications();
       rxChar.addEventListener("characteristicvaluechanged", onNotify);
     } catch (_) { rxChar = null; }
+    stage = "occupancy_check";
+    bluetoothFailureStage = stage;
     const occupied = await checkOccupied();
+    bluetoothFailureStage = "connected";
     setConnectedUI(true);
     if (occupied) {
       cycleButtons.forEach((button) => { button.disabled = true; });
@@ -1085,12 +1136,22 @@ async function connect() {
       setStatus("wrong machine", "warn");
       setActivity("Reconnect", "Choose the matching machine", "warn");
     }
-  } catch (_) {
+  } catch (error) {
+    const chooserCancelled = isBluetoothChooserCancellation(stage, error);
+    if (!chooserCancelled && !unexpectedBluetoothDisconnectReported) {
+      reportBluetoothFailure("bluetooth_connection_failed", { stage, error, machine });
+    }
     await disconnect("connect-failed");
+    if (chooserCancelled) {
+      setStatus(`ready to connect (${machine.name})`);
+      setActivity("Ready", "");
+      return;
+    }
     setStatus(`Couldn’t connect to ${machine.name}`, "bad");
     setActivity("Connection failed", "Try again", "bad");
   } finally {
     if (!isConnected()) {
+      bluetoothFailureStage = "idle";
       updateConnectLabel();
       els.connect.disabled = !selectedMachine();
     }
@@ -1123,23 +1184,40 @@ async function checkOccupied() {
 async function startMachine(machine, cycleKey, label) {
   if (!isConnected() || !deviceMatchesMachine() || completed) return;
   cycleButtons.forEach((button) => { button.disabled = true; });
-  let stage = "not-started";
+  let stage = "occupancy_check";
+  unexpectedBluetoothDisconnectReported = false;
   let context = { machine, cycleKey, cycleLabel: label };
   try {
-    if (await checkOccupied()) return;
+    bluetoothFailureStage = stage;
+    if (await checkOccupied()) {
+      bluetoothFailureStage = "connected";
+      return;
+    }
     showActivationOutcome("pending", context);
     setActivity("Starting...", `${machine.name} - ${label}`, "warn");
     setStatus(`Starting ${machine.name}…`);
+    stage = "handshake";
+    bluetoothFailureStage = stage;
     await send(CMD.HANDSHAKE, "[ACK:HANDSHAKE]");
+    stage = "version";
+    bluetoothFailureStage = stage;
     await send(CMD.VERSION, "[VERSION:");
+    stage = "coin_disable";
+    bluetoothFailureStage = stage;
     await send(CMD.COIN_DISABLE, "[ACK:COIN]");
+    stage = "authorization";
+    bluetoothFailureStage = stage;
     const prepared = await api("prepare_activation", { machineId: machineKey(machine), cycleKey });
     stage = "prepared";
     context = { ...context, activation: { id: prepared.activationId, status: prepared.activationStatus, preparedAt: prepared.preparedAt } };
+    stage = "activation_ack";
+    bluetoothFailureStage = stage;
     await send(String(prepared.activationCommand), "[ACK:ACTIVATE]");
-    stage = "activation-acknowledged";
+    stage = "execution_ack";
+    bluetoothFailureStage = stage;
     await send(CMD.EXEC, "[ACK:EXEC]");
     stage = "execution-acknowledged";
+    bluetoothFailureStage = "completion";
     const completion = await api("complete_activation");
     stage = "completed";
     context = { ...context, activation: completion.activation || context.activation, activatedAt: completion.activatedAt };
@@ -1157,7 +1235,11 @@ async function startMachine(machine, cycleKey, label) {
     if (error.code === "trial_used") {
       try { applySession(await api("session")); }
       catch (_) { showActivationOutcome("uncertain", context); }
+      bluetoothFailureStage = isConnected() ? "connected" : "idle";
       return;
+    }
+    if (!unexpectedBluetoothDisconnectReported && ["handshake", "version", "coin_disable", "activation_ack", "execution_ack"].includes(stage)) {
+      reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });
     }
     if (isConnected()) await disconnect("sequence-error");
     if (error.code === "site_trial_limit_reached") {
@@ -1167,9 +1249,10 @@ async function startMachine(machine, cycleKey, label) {
       els.outcomeReassurance.textContent = "No free start was used. Try again later or continue with paid access for this site.";
       return;
     }
-    const uncertain = ["activation-acknowledged", "execution-acknowledged", "completed"].includes(stage);
+    const uncertain = ["activation_ack", "activation-acknowledged", "execution_ack", "execution-acknowledged", "completed"].includes(stage);
     showActivationOutcome(uncertain ? "uncertain" : "failure", context);
   }
+  bluetoothFailureStage = isConnected() ? "connected" : "idle";
 }
 
 async function disconnect(reason = "manual") {
@@ -1184,6 +1267,7 @@ async function disconnect(reason = "manual") {
     if (device?.gatt?.connected) device.gatt.disconnect();
   } finally {
     device = null; server = null; service = null; rxChar = null; txChar = null; connectedDeviceName = "";
+    bluetoothFailureStage = "idle";
     resetMessages("Disconnected");
     setConnectedUI(false);
     updateConnectLabel();
@@ -1195,7 +1279,17 @@ async function disconnect(reason = "manual") {
 }
 
 function onDisconnected() {
+  const failureMachine = selectedMachine();
+  const failureDeviceName = connectedDeviceName;
+  unexpectedBluetoothDisconnectReported = true;
+  reportBluetoothFailure("bluetooth_unexpected_disconnect", {
+    stage: bluetoothFailureStage === "idle" ? "connected" : bluetoothFailureStage,
+    error: new Error("The Bluetooth device disconnected unexpectedly"),
+    machine: failureMachine,
+    bluetoothDeviceName: failureDeviceName
+  });
   device = null; server = null; service = null; rxChar = null; txChar = null; connectedDeviceName = "";
+  bluetoothFailureStage = "idle";
   resetMessages("Device disconnected");
   setConnectedUI(false);
   updateConnectLabel();

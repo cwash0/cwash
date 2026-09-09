@@ -21,7 +21,15 @@ const ALLOWED_EVENTS = new Set([
   "support_ticket_submitted",
   "extra_activation_checkout_started",
   "extra_activation_purchase_completed",
-  "extra_activation_purchase_failed"
+  "extra_activation_purchase_failed",
+  "bluetooth_connection_failed",
+  "bluetooth_activation_failed",
+  "bluetooth_unexpected_disconnect"
+]);
+const BLUETOOTH_FAILURE_EVENTS = new Set([
+  "bluetooth_connection_failed",
+  "bluetooth_activation_failed",
+  "bluetooth_unexpected_disconnect"
 ]);
 const ANALYTICS_SALT = String(
   process.env.FUNNEL_ANALYTICS_SALT ||
@@ -56,6 +64,7 @@ exports.handler = async (event) => {
     const userAgent = getHeader(event, "user-agent").slice(0, 500);
     const bot = detectBot({ body, userAgent });
     const environment = normalizeAnalyticsEnvironment(process.env.CONTEXT || process.env.NODE_ENV);
+    const failure = BLUETOOTH_FAILURE_EVENTS.has(eventName);
     const recent = await pool.query(
       `
         select count(*)::int as events
@@ -74,9 +83,12 @@ exports.handler = async (event) => {
         insert into funnel_events (
           event_name, event_id_hash, source, route, device_type,
           session_hash, visitor_hash, auth_state, trial_eligibility,
-          ip_hash, user_agent, is_bot, bot_reason, is_test, environment, created_at
+          ip_hash, user_agent, is_bot, bot_reason, is_test, environment,
+          site_id, site_name, machine_id, machine_name, bluetooth_device_name,
+          failure_stage, error_code, error_message, created_at
         )
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                $16, $17, $18, $19, $20, $21, $22, $23, now())
         on conflict (event_id_hash) do nothing
         returning id
       `,
@@ -95,7 +107,15 @@ exports.handler = async (event) => {
         bot.isBot,
         bot.reason,
         environment !== "production",
-        environment
+        environment,
+        failure ? cleanText(body.site_id, 120) : "",
+        failure ? cleanText(body.site_name, 180) : "",
+        failure ? cleanText(body.machine_id, 120) : "",
+        failure ? cleanText(body.machine_name, 180) : "",
+        failure ? cleanText(body.bluetooth_device_name, 180) : "",
+        failure ? cleanText(body.failure_stage, 80).toLowerCase() : "",
+        failure ? cleanText(body.error_code, 100).toLowerCase() : "",
+        failure ? cleanText(body.error_message, 300) : ""
       ]
     );
 
@@ -126,12 +146,32 @@ async function ensureSchema() {
       bot_reason text not null default '',
       is_test boolean not null default false,
       environment text not null default 'production',
+      site_id text,
+      site_name text,
+      machine_id text,
+      machine_name text,
+      bluetooth_device_name text,
+      failure_stage text,
+      error_code text,
+      error_message text,
       created_at timestamptz not null default now()
     )
+  `);
+  await pool.query(`
+    alter table funnel_events
+      add column if not exists site_id text,
+      add column if not exists site_name text,
+      add column if not exists machine_id text,
+      add column if not exists machine_name text,
+      add column if not exists bluetooth_device_name text,
+      add column if not exists failure_stage text,
+      add column if not exists error_code text,
+      add column if not exists error_message text
   `);
   await pool.query(`create index if not exists funnel_events_name_created_idx on funnel_events(event_name, created_at desc)`);
   await pool.query(`create index if not exists funnel_events_session_created_idx on funnel_events(session_hash, created_at desc)`);
   await pool.query(`create index if not exists funnel_events_human_created_idx on funnel_events(created_at desc) where is_bot = false`);
+  await pool.query(`create index if not exists funnel_events_bluetooth_failure_idx on funnel_events(created_at desc, site_id) where event_name like 'bluetooth_%'`);
   schemaReady = true;
 }
 
