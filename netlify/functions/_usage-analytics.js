@@ -193,6 +193,8 @@ async function getBluetoothFailureAnalytics({ pool, period, locations }) {
     and is_bot = false
     and is_test = false
     and environment = 'production'
+    and coalesce(failure_stage, '') not in ('device_request', 'api_unavailable')
+    and lower(coalesce(error_message, '')) not like '%web bluetooth%unavailable%'
     ${periodClause}
   `;
   const queryParams = [BLUETOOTH_FAILURE_EVENTS, period.days];

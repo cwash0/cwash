@@ -297,6 +297,9 @@ function setStatus(text, tone = "") {
   } else if (lower.includes("started")) {
     state = "started";
     title = `${machineName} started`;
+  } else if (lower.includes("activation complete")) {
+    state = "complete";
+    title = `${machineName} started`;
   } else if (tone === "ok" || (lower.includes("connected") && !lower.includes("not connected"))) {
     state = "connected";
     title = `Connected to ${machineName}`;
@@ -318,9 +321,11 @@ function setStatus(text, tone = "") {
   }
 
   els.connectionModule.dataset.state = state;
+  if (state === "complete") els.connectBtn.classList.add("hidden");
   els.status.className = `status-pill ${tone}`.trim();
   els.status.innerHTML = `<span class="status-dot" aria-hidden="true"></span><span>${escapeHtml(normalised || title)}</span>`;
   els.connectionTitle.textContent = title;
+  updateUsageNoticeVisibility();
   updateConnectButtonLabel();
 }
 
@@ -549,13 +554,9 @@ function reportBluetoothFailure(eventName, { stage, error, machine, bluetoothDev
 }
 
 function isBluetoothChooserCancellation(stage, error) {
-  if (stage !== "device_request") return false;
-  const errorName = String(error?.name || "").toLowerCase();
-  const errorMessage = String(error?.message || error || "").toLowerCase();
-  return errorName === "notfounderror" ||
-    errorName === "aborterror" ||
-    /\b(cancelled|canceled|cancel|dismissed)\b/.test(errorMessage) ||
-    errorMessage.includes("no device selected");
+  // Some Bluetooth browsers report chooser cancellation only as "Device Request Failed".
+  // Until requestDevice() returns a device, there is no reliable failure/cancel distinction.
+  return stage === "device_request";
 }
 
 function getMachineNameFromKey(key) {
@@ -572,6 +573,15 @@ function updateMachinesInUseNotice(extraText = "") {
 
   els.inUseNotice.textContent = extraText;
   els.inUseNotice.classList.remove("hidden");
+}
+
+function updateUsageNoticeVisibility() {
+  if (!els.usageNotice || !els.connectionModule) return;
+  const state = String(els.connectionModule.dataset.state || "ready");
+  const remaining = Math.max(0, Number(weeklyUsage.remaining ?? weeklyUsage.limit ?? 4));
+  const isPostActivation = state === "started" || state === "complete";
+  const isBlockingLimit = remaining <= 0 && state !== "starting";
+  els.usageNotice.classList.toggle("is-visible", isPostActivation || isBlockingLimit);
 }
 
 function updateWeeklyUsageNotice() {
@@ -594,6 +604,7 @@ function updateWeeklyUsageNotice() {
   }
   els.usageNotice.classList.toggle("limit", remaining <= 0);
   els.usageNotice.classList.toggle("low", remaining === 1);
+  updateUsageNoticeVisibility();
   updateUpgradePanel();
 }
 
@@ -653,7 +664,7 @@ function updateUpgradePanel() {
   if (wasHidden) setUpgradePanelExpanded(false);
   els.upgradeBtn.classList.remove("hidden");
   els.upgradeTitle.textContent = "Add 3 extra activations";
-  els.upgradeText.textContent = "Get 2 more machine starts for this week.";
+  els.upgradeText.textContent = "Get 3 more machine starts for this week.";
 }
 
 function upgradeErrorText(code, fallback = "") {
@@ -1933,7 +1944,6 @@ async function connect() {
   }
 
   if (!navigator.bluetooth) {
-    reportBluetoothFailure("bluetooth_connection_failed", { stage: "api_unavailable", error: new Error("Web Bluetooth is unavailable in this browser"), machine: selected });
     if (isIOSDevice()) {
       showIOSBluefyNotes({ request: true });
       setActivity("Ready", "", "");
@@ -2051,6 +2061,7 @@ async function disconnect(reason = "manual") {
 
     if (preserveSuccess) {
       preserveSuccessDisconnectUI = false;
+      setStatus("activation complete");
       return;
     }
 

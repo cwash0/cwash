@@ -614,6 +614,17 @@ button.ramp-row:hover { background: var(--surface-2); }
 .growth-history-panel th:nth-child(n+2), .growth-history-panel td:nth-child(n+2), .usage-history-panel th:nth-child(n+2), .usage-history-panel td:nth-child(n+2), .usage-performance-panel th:nth-child(n+2), .usage-performance-panel td:nth-child(n+2) { text-align: right; }
 .growth-history-panel tbody tr:first-child, .usage-history-panel tbody tr:first-child { background: #f5faf9; }
 .usage-performance-panel td:first-child strong { display: block; }
+.bluetooth-failure-panel { padding: 0; overflow: hidden; }
+.bluetooth-failure-toggle { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 14px; padding: 14px 16px; list-style: none; cursor: pointer; }
+.bluetooth-failure-toggle::-webkit-details-marker { display: none; }
+.bluetooth-failure-toggle::after { content: "+"; display: grid; width: 24px; height: 24px; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); font-size: 1rem; font-weight: 500; line-height: 1; }
+.bluetooth-failure-toggle > span:first-child { min-width: 0; display: grid; gap: 2px; }
+.bluetooth-failure-toggle strong { color: var(--ink); font-size: .8rem; }
+.bluetooth-failure-toggle small { color: var(--muted); font-size: .62rem; font-weight: 500; }
+.bluetooth-failure-toggle > .muted { flex: 0 0 auto; font-size: .62rem; }
+.bluetooth-failure-panel[open] > .bluetooth-failure-toggle { border-bottom: 1px solid var(--line); }
+.bluetooth-failure-panel[open] > .bluetooth-failure-toggle::after { content: "−"; }
+.bluetooth-failure-content { padding: 14px 16px 16px; }
 .bluetooth-failure-summary { margin: 0 0 12px; color: var(--muted); font-size: .7rem; line-height: 1.5; }
 .bluetooth-failure-kpis { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; margin-bottom: 14px; }
 .bluetooth-failure-kpis > div { min-width: 0; padding: 10px 11px; border: 1px solid #e0e7ec; border-radius: 7px; background: #f8fafb; }
@@ -683,6 +694,9 @@ button.ramp-row:hover { background: var(--surface-2); }
 @media (max-width: 640px) {
   .paid-growth-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .bluetooth-failure-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .bluetooth-failure-toggle { grid-template-columns: minmax(0,1fr) auto; gap: 6px 10px; }
+  .bluetooth-failure-toggle > .muted { grid-column: 1 / -1; grid-row: 2; }
+  .bluetooth-failure-toggle::after { grid-column: 2; grid-row: 1; }
   .growth-kpi { min-height: 112px; padding: 12px; }
   .paid-growth-source { align-items: flex-start; flex-wrap: wrap; }
   .usage-definition { align-items: flex-start; flex-wrap: wrap; }

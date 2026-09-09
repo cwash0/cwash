@@ -268,13 +268,9 @@ function reportBluetoothFailure(eventName, { stage, error, machine, bluetoothDev
 }
 
 function isBluetoothChooserCancellation(stage, error) {
-  if (stage !== "device_request") return false;
-  const errorName = String(error?.name || "").toLowerCase();
-  const errorMessage = String(error?.message || error || "").toLowerCase();
-  return errorName === "notfounderror" ||
-    errorName === "aborterror" ||
-    /\b(cancelled|canceled|cancel|dismissed)\b/.test(errorMessage) ||
-    errorMessage.includes("no device selected");
+  // Some Bluetooth browsers report chooser cancellation only as "Device Request Failed".
+  // Until requestDevice() returns a device, there is no reliable failure/cancel distinction.
+  return stage === "device_request";
 }
 
 function selectedMachine() {
@@ -328,7 +324,7 @@ function setStatus(text, tone = "") {
   } else if (lower.includes("starting")) {
     state = "starting";
     title = `Starting ${machineName}…`;
-  } else if (lower.includes("started")) {
+  } else if (lower.includes("started") || lower.includes("activated")) {
     state = "started";
     title = `${machineName} started`;
   } else if (tone === "ok" || (lower.includes("connected") && !lower.includes("not connected"))) {
@@ -346,6 +342,7 @@ function setStatus(text, tone = "") {
   els.status.className = `status-pill ${tone}`.trim();
   els.status.innerHTML = `<span class="status-dot" aria-hidden="true"></span><span>${escapeHtml(normalised || title)}</span>`;
   els.connectionTitle.textContent = title;
+  els.allowance.classList.toggle("is-visible", state === "started");
   updateConnectLabel();
 }
 
@@ -1083,7 +1080,6 @@ async function connect() {
     setActivity("Open securely", "Use HTTPS or localhost", "warn"); return;
   }
   if (!navigator.bluetooth) {
-    reportBluetoothFailure("bluetooth_connection_failed", { stage: "api_unavailable", error: new Error("Web Bluetooth is unavailable in this browser"), machine });
     if (isIOSDevice()) {
       showIOSNote({ request: true });
       setActivity("Ready", "");
@@ -1227,8 +1223,9 @@ async function startMachine(machine, cycleKey, label) {
       auth_state: "anonymous",
       trial_eligibility: "used"
     });
-    setStatus(`${machine.name} activated`, "ok");
-    setActivity(`${machine.name} activated`, "", "ok");
+    els.allowance.textContent = "Free activation used";
+    setStatus(`${machine.name} started`, "ok");
+    setActivity(`${machine.name} started`, "", "ok");
     await disconnect("complete");
     setTimeout(() => showActivationOutcome("success", context), 650);
   } catch (error) {

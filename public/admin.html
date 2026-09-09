@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex,nofollow" />
   <title>CircuitWash Control</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/admin.css?v=7" />
+  <link rel="stylesheet" href="assets/admin.css?v=8" />
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay">
@@ -219,25 +219,27 @@
               <article class="panel growth-kpi"><span>Free-trial activations</span><strong id="trialActivationsMetric">-</strong><small id="trialActivationsSub">Selected window</small></article>
             </section>
 
-            <section class="panel bluetooth-failure-panel">
-              <div class="section-heading"><div><span class="eyebrow">Reliability</span><h2>Bluetooth failures</h2><p>Client-side connection, start-sequence, and unexpected-disconnect reports. Access codes are never stored in analytics.</p></div><span id="bluetoothFailureLatest" class="muted"></span></div>
-              <p id="bluetoothFailureSummary" class="bluetooth-failure-summary">Loading Bluetooth failure reports…</p>
-              <div class="bluetooth-failure-kpis" aria-label="Bluetooth failure summary">
-                <div><span>Total failures</span><strong id="bluetoothFailureTotal">-</strong></div>
-                <div><span>Activation sequence</span><strong id="bluetoothActivationFailures">-</strong></div>
-                <div><span>Connection setup</span><strong id="bluetoothConnectionFailures">-</strong></div>
-                <div><span>Unexpected disconnects</span><strong id="bluetoothUnexpectedDisconnects">-</strong></div>
-                <div><span>Affected sessions</span><strong id="bluetoothAffectedSessions">-</strong></div>
-                <div><span>Affected sites</span><strong id="bluetoothAffectedSites">-</strong></div>
-              </div>
-              <div class="table-wrap"><table><thead><tr><th>Time</th><th>Type</th><th>Site</th><th>Machine</th><th>Stage</th><th>Error</th><th>Device</th></tr></thead><tbody id="bluetoothFailureRows"><tr><td colspan="7" class="muted">Loading Bluetooth failure reports…</td></tr></tbody></table></div>
-            </section>
-
             <section class="panel usage-history-panel"><div class="section-heading"><div><span class="eyebrow">Usage history</span><h2>Activations by period</h2><p>Access-code data is stored weekly; the selected window includes each overlapping UTC week.</p></div></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Total activations</th><th>Customer codes</th><th>Free trials</th><th>Admin / other</th><th>Sites used</th></tr></thead><tbody id="usageHistoryRows"><tr><td colspan="6" class="muted">Loading usage history…</td></tr></tbody></table></div></section>
 
             <section class="panel usage-performance-panel"><div class="section-heading"><div><span class="eyebrow">City usage</span><h2>Total activations by city</h2><p>Which cities use the product most, with site coverage and activation source shown separately.</p></div><span id="usageCityCount" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>City</th><th>Sites used</th><th>Total activations</th><th>In window</th><th>Customer codes / window</th><th>Free trials / window</th><th>Codes used / window</th><th>Latest use</th></tr></thead><tbody id="usageCityRows"><tr><td colspan="8" class="muted">Loading city usage…</td></tr></tbody></table></div></section>
 
             <section class="panel usage-performance-panel"><div class="section-heading"><div><span class="eyebrow">Site usage</span><h2>Total activations by site</h2><p>Every used production site, ranked by activation volume in the selected window.</p></div><span id="usageSiteCount" class="muted"></span></div><div class="table-wrap"><table><thead><tr><th>Site</th><th>City</th><th>Total activations</th><th>In window</th><th>Customer codes / window</th><th>Free trials / window</th><th>Codes used / window</th><th>Latest use</th></tr></thead><tbody id="usageSiteRows"><tr><td colspan="8" class="muted">Loading site usage…</td></tr></tbody></table></div></section>
+
+            <details class="panel bluetooth-failure-panel">
+              <summary class="bluetooth-failure-toggle"><span><strong>Bluetooth failure reports</strong><small>Connection, activation-sequence, and unexpected-disconnect details</small></span><span id="bluetoothFailureLatest" class="muted">No reports yet</span></summary>
+              <div class="bluetooth-failure-content">
+                <p id="bluetoothFailureSummary" class="bluetooth-failure-summary">Loading Bluetooth failure reports…</p>
+                <div class="bluetooth-failure-kpis" aria-label="Bluetooth failure summary">
+                  <div><span>Total failures</span><strong id="bluetoothFailureTotal">-</strong></div>
+                  <div><span>Activation sequence</span><strong id="bluetoothActivationFailures">-</strong></div>
+                  <div><span>Connection setup</span><strong id="bluetoothConnectionFailures">-</strong></div>
+                  <div><span>Unexpected disconnects</span><strong id="bluetoothUnexpectedDisconnects">-</strong></div>
+                  <div><span>Affected sessions</span><strong id="bluetoothAffectedSessions">-</strong></div>
+                  <div><span>Affected sites</span><strong id="bluetoothAffectedSites">-</strong></div>
+                </div>
+                <div class="table-wrap"><table><thead><tr><th>Time</th><th>Type</th><th>Site</th><th>Machine</th><th>Stage</th><th>Error</th><th>Device</th></tr></thead><tbody id="bluetoothFailureRows"><tr><td colspan="7" class="muted">Loading Bluetooth failure reports…</td></tr></tbody></table></div>
+              </div>
+            </details>
           </div>
 
           <div class="legacy-analytics hidden" aria-hidden="true">
