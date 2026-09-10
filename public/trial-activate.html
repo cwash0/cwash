@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="assets/activate.css?v=system-15" />
   <link rel="stylesheet" href="assets/site-selector.css?v=shared-selector-2" />
   <link rel="stylesheet" href="assets/payment-sheet.css?v=payment-methods-2" />
-  <link rel="stylesheet" href="assets/trial-activate.css?v=cycle-height-1" />
+  <link rel="stylesheet" href="assets/trial-activate.css?v=conversion-polish-2" />
   <script src="https://js.stripe.com/v3/"></script>
 </head>
 <body>
@@ -70,54 +70,59 @@
           </div>
           <h2 id="trialOutcomeTitle">Sending start to your machine&hellip;</h2>
           <p id="trialOutcomeCycle" class="outcome-cycle"></p>
-          <p id="trialOutcomeReassurance" class="outcome-reassurance">Keep this page open while CircuitWash confirms the activation.</p>
+          <p id="trialOutcomeReassurance" class="outcome-reassurance hidden"></p>
         </div>
 
         <div id="trialCompletionStatus" class="trial-completion-status hidden">
           <span>Free activation complete</span>
         </div>
 
-        <aside id="trialAccessOffer" class="continuation-panel hidden" aria-labelledby="trialOfferTitle">
+        <aside id="trialAccessOffer" class="continuation-panel hidden" aria-label="1-year access offer">
           <div id="trialPurchaseOfferContent">
-            <h3 id="trialOfferTitle">Want to use CircuitWash again?</h3>
-            <button id="trialPurchaseCta" class="btn-primary continuation-cta" type="button">Get 1-year access <span aria-hidden="true">&rarr;</span></button>
-            <p id="trialPurchaseMessage" class="trial-purchase-message" aria-live="polite"></p>
-            <a class="continuation-dismiss" href="/">Maybe later</a>
-            <figure class="value-compression" aria-label="Over a year, paying individually costs an estimated 150 to 250 pounds. Pay 20 pounds once for one year of access and save an estimated 130 to 230 pounds.">
+            <figure class="value-compression" aria-label="One year costs an estimated 150 to 250 pounds when paying per wash. Pay 20 pounds once for 1 year of access.">
               <div class="value-compression-anchor">
-                <span class="value-compression-eyebrow">Over a year</span>
+                <span class="value-compression-eyebrow">1 year total</span>
                 <strong>&pound;150&ndash;&pound;250</strong>
-                <span>paying individually</span>
+                <span class="value-compression-context">when paying per wash</span>
               </div>
 
               <div class="value-compression-flow" aria-hidden="true">
                 <div class="value-payment-marks">
-                  <span>&pound;</span><span>&pound;</span><span>&pound;</span><span>&pound;</span><span>&pound;</span>
+                  <span>&pound;</span><span>&pound;</span><span>&pound;</span><span>&pound;</span>
                 </div>
-                <svg viewBox="0 0 320 104" preserveAspectRatio="none">
-                  <path class="value-flow-line" pathLength="1" d="M22 5 C22 48 116 45 155 84"></path>
-                  <path class="value-flow-line" pathLength="1" d="M91 5 C91 46 130 52 157 84"></path>
-                  <path class="value-flow-line" pathLength="1" d="M160 5 V84"></path>
-                  <path class="value-flow-line" pathLength="1" d="M229 5 C229 46 190 52 163 84"></path>
-                  <path class="value-flow-line" pathLength="1" d="M298 5 C298 48 204 45 165 84"></path>
-                  <path class="value-flow-stem" pathLength="1" d="M160 84 V98"></path>
-                  <path class="value-flow-arrow" d="m154 92 6 6 6-6"></path>
+                <svg viewBox="0 0 320 60" preserveAspectRatio="none">
+                  <g class="value-flow-lines">
+                    <path pathLength="1" d="M42 8 L146 42"></path>
+                    <path pathLength="1" d="M121 8 L155 42"></path>
+                    <path pathLength="1" d="M199 8 L165 42"></path>
+                    <path pathLength="1" d="M278 8 L174 42"></path>
+                  </g>
+                  <path class="value-flow-stem" pathLength="1" d="M160 42 V54"></path>
+                  <path class="value-flow-arrow" d="m155 48 5 6 5-6"></path>
                 </svg>
               </div>
 
-              <div class="value-annual-pass">
-                <div class="value-annual-price">
-                  <span>Pay once</span>
-                  <strong>&pound;20</strong>
-                </div>
-                <div class="value-annual-term">
-                  <strong>1 year</strong>
-                  <span>of access</span>
-                </div>
+              <div class="value-annual-stage">
+                <button id="trialPurchaseCta" class="value-annual-pass" type="button" aria-label="Pay 20 pounds once for 1 year of access">
+                  <span class="value-annual-price">
+                    <span>Pay once</span>
+                    <strong>&pound;20</strong>
+                  </span>
+                  <span class="value-annual-term">
+                    <span class="value-annual-term-copy">
+                      <strong>1 year</strong>
+                      <span>of access</span>
+                    </span>
+                    <b class="value-annual-arrow" aria-hidden="true">&rarr;</b>
+                  </span>
+                </button>
               </div>
 
-              <figcaption>Save an estimated &pound;130&ndash;&pound;230</figcaption>
             </figure>
+            <p id="trialPurchaseMessage" class="trial-purchase-message" aria-live="polite"></p>
+            <div class="continuation-dismiss-stage">
+              <a class="continuation-dismiss" href="/">Maybe later</a>
+            </div>
           </div>
           <div id="trialPurchaseResult" class="trial-purchase-result hidden" aria-live="polite">
             <p class="continuation-kicker">Your 1-year access code</p>
@@ -248,6 +253,6 @@
 
   <script src="assets/funnel-analytics.js?v=bluetooth-1"></script>
   <script src="assets/site-selector.js?v=site-results-2"></script>
-  <script src="assets/trial-activate.js?v=bluetooth-6"></script>
+  <script src="assets/trial-activate.js?v=bluetooth-7"></script>
 </body>
 </html>

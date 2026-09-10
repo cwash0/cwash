@@ -790,7 +790,8 @@ function showActivationOutcome(state, context = {}) {
 
   if (state === "pending") {
     els.outcomeTitle.textContent = details.machineName ? `Starting ${details.machineName}…` : "Starting your machine…";
-    els.outcomeReassurance.textContent = "Keep this page open while CircuitWash confirms the activation.";
+    els.outcomeReassurance.textContent = "";
+    els.outcomeReassurance.classList.add("hidden");
     setActivity("Activation pending", details.machineName, "warn");
   } else if (state === "success") {
     els.outcomeTitle.textContent = details.machineName ? `${details.machineName} activated` : "Machine activated";
