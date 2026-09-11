@@ -26,6 +26,7 @@ let changeSiteSearchTimer = null;
 let changeSiteHistoryActive = false;
 let activationSiteSelector = null;
 let bluefyCopyToastTimer = null;
+let bluetoothRoomNoticeTimer = null;
 let bluetoothFailureStage = "idle";
 let unexpectedBluetoothDisconnectReported = false;
 
@@ -1067,6 +1068,24 @@ function showBluefyCopyToast() {
   }, 1800);
 }
 
+function hideBluetoothRoomNotice() {
+  const notice = document.querySelector("[data-bluetooth-room-notice]");
+  clearTimeout(bluetoothRoomNoticeTimer);
+  if (!notice) return;
+  notice.classList.remove("is-visible");
+  notice.setAttribute("aria-hidden", "true");
+}
+
+function showBluetoothRoomNotice() {
+  const notice = document.querySelector("[data-bluetooth-room-notice]");
+  if (!notice) return;
+  hideBluetoothRoomNotice();
+  notice.setAttribute("aria-hidden", "false");
+  void notice.offsetWidth;
+  notice.classList.add("is-visible");
+  bluetoothRoomNoticeTimer = setTimeout(hideBluetoothRoomNotice, 5200);
+}
+
 function rememberPendingBluefyUrl(targetUrl) {
   try { sessionStorage.setItem(BLUEFY_PENDING_URL_KEY, targetUrl); } catch (_) {}
 }
@@ -1934,6 +1953,7 @@ async function checkSelectedMachineInUse({ silent = false } = {}) {
 
 async function connect() {
   const selected = getSelectedMachine();
+  hideBluetoothRoomNotice();
 
   if (!selected) { setActivity("Select a machine first", "", "warn"); setStatus("select a machine first"); return; }
   if (!selected.bluetoothName) { setActivity("Machine not ready", "", "warn"); setStatus("machine unavailable"); return; }
@@ -2025,6 +2045,7 @@ async function connect() {
     if (chooserCancelled) {
       setStatus(`ready to connect (${selected.name})`);
       setActivity("Ready", "", "");
+      showBluetoothRoomNotice();
       return;
     }
     setStatus(`Couldn’t connect to ${selected.name}`, "bad");

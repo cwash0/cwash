@@ -165,6 +165,7 @@ let waiters = [];
 let completed = false;
 let iosBluefyPromptRequested = false;
 let bluefyCopyToastTimer = null;
+let bluetoothRoomNoticeTimer = null;
 let machinePickerReturnFocus = null;
 let currentSite = null;
 let currentOutcomeContext = null;
@@ -1075,6 +1076,7 @@ function isIOSDevice() {
 
 async function connect() {
   const machine = selectedMachine();
+  hideBluetoothRoomNotice();
   if (!machine) return;
   if (!window.isSecureContext) {
     reportBluetoothFailure("bluetooth_connection_failed", { stage: "secure_context", error: new Error("A secure browser context is required"), machine });
@@ -1142,6 +1144,7 @@ async function connect() {
     if (chooserCancelled) {
       setStatus(`ready to connect (${machine.name})`);
       setActivity("Ready", "");
+      showBluetoothRoomNotice();
       return;
     }
     setStatus(`Couldn’t connect to ${machine.name}`, "bad");
@@ -1396,6 +1399,24 @@ function showBluefyCopyToast() {
     toast.classList.remove("is-visible");
     toast.setAttribute("aria-hidden", "true");
   }, 1800);
+}
+
+function hideBluetoothRoomNotice() {
+  const notice = document.querySelector("[data-bluetooth-room-notice]");
+  clearTimeout(bluetoothRoomNoticeTimer);
+  if (!notice) return;
+  notice.classList.remove("is-visible");
+  notice.setAttribute("aria-hidden", "true");
+}
+
+function showBluetoothRoomNotice() {
+  const notice = document.querySelector("[data-bluetooth-room-notice]");
+  if (!notice) return;
+  hideBluetoothRoomNotice();
+  notice.setAttribute("aria-hidden", "false");
+  void notice.offsetWidth;
+  notice.classList.add("is-visible");
+  bluetoothRoomNoticeTimer = setTimeout(hideBluetoothRoomNotice, 5200);
 }
 
 function rememberPendingBluefyUrl(targetUrl) {
