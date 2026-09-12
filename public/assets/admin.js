@@ -20,6 +20,7 @@ let promosData = [];
 let analyticsData = null;
 let usageAnalyticsData = null;
 let paidAnalyticsView = "growth";
+let growthChartState = { metric: "newCustomers", points: [], currency: "GBP", activeIndex: null, geometry: null };
 let analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
 let analyticsView = "overview";
 let selectedAnalyticsCity = "";
@@ -49,7 +50,7 @@ const els = {
   metricActivations: $("metricActivations"), metricSupport: $("metricSupport"), metricSupportSub: $("metricSupportSub"), trendChart: $("trendChart"),
   recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), orderTypeBreakdown: $("orderTypeBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
   reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsRange: $("analyticsRange"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsPeriodMetric: $("analyticsPeriodMetric"), analyticsPeriodSub: $("analyticsPeriodSub"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsNoOrderSub: $("analyticsNoOrderSub"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsDataQuality: $("analyticsDataQuality"), analyticsTrendSummary: $("analyticsTrendSummary"), analyticsDemandTrend: $("analyticsDemandTrend"), analyticsActivationTrend: $("analyticsActivationTrend"), analyticsTopSites: $("analyticsTopSites"), analyticsTopSearches: $("analyticsTopSearches"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), analyticsHitsPageStatus: $("analyticsHitsPageStatus"), analyticsHitsPrev: $("analyticsHitsPrev"), analyticsHitsNext: $("analyticsHitsNext"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
-  growthRange: $("growthRange"), refreshGrowthBtn: $("refreshGrowthBtn"), paidGrowthSummary: $("paidGrowthSummary"), paidCustomersMetric: $("paidCustomersMetric"), paidCustomersSub: $("paidCustomersSub"), newPaidCustomersMetric: $("newPaidCustomersMetric"), newPaidCustomersSub: $("newPaidCustomersSub"), paidRevenueMetric: $("paidRevenueMetric"), paidRevenueSub: $("paidRevenueSub"), paidOrdersMetric: $("paidOrdersMetric"), paidOrdersSub: $("paidOrdersSub"), paidCitiesMetric: $("paidCitiesMetric"), paidCitiesSub: $("paidCitiesSub"), paidSitesMetric: $("paidSitesMetric"), paidSitesSub: $("paidSitesSub"), growthHistorySummary: $("growthHistorySummary"), growthHistoryRows: $("growthHistoryRows"), newPaidMarkets: $("newPaidMarkets"), cityPerformanceCount: $("cityPerformanceCount"), paidCityRows: $("paidCityRows"), paidSiteRows: $("paidSiteRows"),
+  growthRange: $("growthRange"), refreshGrowthBtn: $("refreshGrowthBtn"), paidGrowthSummary: $("paidGrowthSummary"), paidCustomersMetric: $("paidCustomersMetric"), paidCustomersSub: $("paidCustomersSub"), newPaidCustomersMetric: $("newPaidCustomersMetric"), newPaidCustomersSub: $("newPaidCustomersSub"), paidRevenueMetric: $("paidRevenueMetric"), paidRevenueSub: $("paidRevenueSub"), paidOrdersMetric: $("paidOrdersMetric"), paidOrdersSub: $("paidOrdersSub"), paidCitiesMetric: $("paidCitiesMetric"), paidCitiesSub: $("paidCitiesSub"), paidSitesMetric: $("paidSitesMetric"), paidSitesSub: $("paidSitesSub"), growthHistorySummary: $("growthHistorySummary"), growthHistoryChart: $("growthHistoryChart"), growthHistoryChartWrap: $("growthHistoryChartWrap"), growthHistoryTooltip: $("growthHistoryTooltip"), growthHistoryChartEmpty: $("growthHistoryChartEmpty"), growthHistoryChartDetails: $("growthHistoryChartDetails"), growthChartLegend: $("growthChartLegend"), newPaidMarkets: $("newPaidMarkets"), cityPerformanceCount: $("cityPerformanceCount"), paidCityRows: $("paidCityRows"), paidSiteRows: $("paidSiteRows"),
   usageAnalyticsSummary: $("usageAnalyticsSummary"), totalActivationsMetric: $("totalActivationsMetric"), periodActivationsMetric: $("periodActivationsMetric"), usageCitiesMetric: $("usageCitiesMetric"), usageCitiesSub: $("usageCitiesSub"), usageSitesMetric: $("usageSitesMetric"), usageSitesSub: $("usageSitesSub"), paidActivationsMetric: $("paidActivationsMetric"), paidActivationsSub: $("paidActivationsSub"), trialActivationsMetric: $("trialActivationsMetric"), trialActivationsSub: $("trialActivationsSub"), usageHistoryRows: $("usageHistoryRows"), usageCityCount: $("usageCityCount"), usageCityRows: $("usageCityRows"), usageSiteCount: $("usageSiteCount"), usageSiteRows: $("usageSiteRows"), bluetoothFailureSummary: $("bluetoothFailureSummary"), bluetoothFailureLatest: $("bluetoothFailureLatest"), bluetoothFailureTotal: $("bluetoothFailureTotal"), bluetoothActivationFailures: $("bluetoothActivationFailures"), bluetoothConnectionFailures: $("bluetoothConnectionFailures"), bluetoothUnexpectedDisconnects: $("bluetoothUnexpectedDisconnects"), bluetoothAffectedSessions: $("bluetoothAffectedSessions"), bluetoothAffectedSites: $("bluetoothAffectedSites"), bluetoothFailureRows: $("bluetoothFailureRows"),
   networkOverviewSummary: $("networkOverviewSummary"), networkActiveUsers: $("networkActiveUsers"), networkActiveUsersDelta: $("networkActiveUsersDelta"), networkNewUsers: $("networkNewUsers"), networkNewUsersDelta: $("networkNewUsersDelta"), networkRepresentedCities: $("networkRepresentedCities"), networkNewCities: $("networkNewCities"), networkNewCitiesDelta: $("networkNewCitiesDelta"), networkActivatedCities: $("networkActivatedCities"), networkActivatedSample: $("networkActivatedSample"), networkActivationRate: $("networkActivationRate"), networkActivationDelta: $("networkActivationDelta"),
   spreadBalance: $("spreadBalance"), breadthDepthSummary: $("breadthDepthSummary"), cityLifecycleStrip: $("cityLifecycleStrip"), cityCoverageSummary: $("cityCoverageSummary"), cityLocationCoverage: $("cityLocationCoverage"), cityCoverageTrend: $("cityCoverageTrend"), cityLifecycleFunnel: $("cityLifecycleFunnel"), newCitiesList: $("newCitiesList"),
@@ -887,11 +888,11 @@ async function loadPaidGrowth() {
     analyticsData = await api("analytics", { periodDays: selectedPaidGrowthPeriod() });
     renderPaidGrowth(analyticsData);
   } catch (error) {
-    const message = escapeHtml(error.message || "Unable to load paid growth.");
-    els.paidGrowthSummary.innerHTML = `<span class="growth-error">${message}</span>`;
-    els.growthHistoryRows.innerHTML = `<tr><td colspan="8" class="muted">${message}</td></tr>`;
-    els.paidCityRows.innerHTML = `<tr><td colspan="7" class="muted">${message}</td></tr>`;
-    els.paidSiteRows.innerHTML = `<tr><td colspan="7" class="muted">${message}</td></tr>`;
+    const message = error.message || "Unable to load paid growth.";
+    els.paidGrowthSummary.innerHTML = `<span class="growth-error">${escapeHtml(message)}</span>`;
+    showGrowthHistoryChartMessage(message);
+    els.paidCityRows.innerHTML = `<tr><td colspan="7" class="muted">${escapeHtml(message)}</td></tr>`;
+    els.paidSiteRows.innerHTML = `<tr><td colspan="7" class="muted">${escapeHtml(message)}</td></tr>`;
   }
 }
 
@@ -902,7 +903,7 @@ function selectedPaidGrowthPeriod() {
 function setPaidGrowthLoading() {
   els.paidGrowthSummary.textContent = "Loading paid growth…";
   els.newPaidMarkets.innerHTML = '<div class="analytics-empty">Loading paid locations…</div>';
-  els.growthHistoryRows.innerHTML = '<tr><td colspan="8" class="muted">Loading growth history…</td></tr>';
+  showGrowthHistoryChartMessage("Loading growth history…");
   els.paidCityRows.innerHTML = '<tr><td colspan="7" class="muted">Loading paid cities…</td></tr>';
   els.paidSiteRows.innerHTML = '<tr><td colspan="7" class="muted">Loading paid sites…</td></tr>';
 }
@@ -945,24 +946,237 @@ function renderPaidGrowth(data) {
 }
 
 function renderGrowthHistory(points, currency) {
-  els.growthHistoryRows.replaceChildren();
-  const rows = points.slice().reverse().slice(0, 36);
-  if (!rows.length) {
-    els.growthHistoryRows.innerHTML = '<tr><td colspan="8" class="muted">No paid growth history yet.</td></tr>';
+  growthChartState.points = Array.isArray(points) ? points.slice() : [];
+  growthChartState.currency = currency || "GBP";
+  growthChartState.activeIndex = null;
+  growthChartState.geometry = null;
+  if (!growthChartState.points.length) {
+    showGrowthHistoryChartMessage("No paid growth history yet.");
     return;
   }
-  rows.forEach((point) => {
-    const tr = document.createElement("tr");
-    appendCell(tr, formatGrowthPeriod(point.date));
-    appendCell(tr, formatNumber(point.newCustomers));
-    appendCell(tr, formatNumber(point.orders));
-    appendCell(tr, money(point.revenue, currency));
-    appendCell(tr, formatSignedCount(point.newCities), Number(point.newCities) > 0 ? "growth-positive" : "muted");
-    appendCell(tr, formatSignedCount(point.newSites), Number(point.newSites) > 0 ? "growth-positive" : "muted");
-    appendCell(tr, formatNumber(point.totalCities));
-    appendCell(tr, formatNumber(point.totalSites));
-    els.growthHistoryRows.appendChild(tr);
+  els.growthHistoryChartEmpty.classList.add("hidden");
+  renderGrowthChartLegend();
+  requestAnimationFrame(drawGrowthHistoryChart);
+}
+
+const GROWTH_CHART_METRICS = {
+  newCustomers: { label: "New customers", mode: "line", series: [{ key: "newCustomers", label: "New customers", color: "#176b63" }] },
+  orders: { label: "Paid orders", mode: "line", series: [{ key: "orders", label: "Paid orders", color: "#3b7196" }] },
+  revenue: { label: "Revenue", mode: "line", money: true, series: [{ key: "revenue", label: "Revenue", color: "#c87928" }] },
+  reach: { label: "Paid reach", mode: "line", series: [{ key: "totalCities", label: "Total cities", color: "#176b63" }, { key: "totalSites", label: "Total sites", color: "#3b7196" }] }
+};
+
+function showGrowthHistoryChartMessage(message) {
+  growthChartState.points = [];
+  growthChartState.activeIndex = null;
+  growthChartState.geometry = null;
+  const canvas = els.growthHistoryChart;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  els.growthHistoryTooltip.classList.add("hidden");
+  els.growthHistoryChartEmpty.textContent = message;
+  els.growthHistoryChartEmpty.classList.remove("hidden");
+  els.growthHistoryChartDetails.textContent = message;
+  els.growthChartLegend.replaceChildren();
+}
+
+function renderGrowthChartLegend() {
+  const config = GROWTH_CHART_METRICS[growthChartState.metric] || GROWTH_CHART_METRICS.newCustomers;
+  els.growthChartLegend.replaceChildren();
+  config.series.forEach((series) => {
+    const item = document.createElement("span");
+    const swatch = document.createElement("i");
+    swatch.style.setProperty("--legend-color", series.color);
+    item.append(swatch, document.createTextNode(series.label));
+    els.growthChartLegend.appendChild(item);
   });
+}
+
+function compactChartNumber(value) {
+  return new Intl.NumberFormat("en-GB", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value) || 0);
+}
+
+function growthChartValue(value, moneyValue = false) {
+  return moneyValue ? money(value, growthChartState.currency) : formatNumber(value);
+}
+
+function growthChartAxisValue(value, moneyValue = false) {
+  return moneyValue ? compactMoney(value, growthChartState.currency) : compactChartNumber(value);
+}
+
+function niceChartMaximum(value) {
+  const raw = Math.max(Number(value) || 0, 1);
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const rounded = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return rounded * magnitude;
+}
+
+function formatGrowthAxisPeriod(value) {
+  const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00`);
+  if (!Number.isFinite(date.getTime())) return String(value || "");
+  return date.toLocaleDateString([], { day: "numeric", month: "short" });
+}
+
+function drawGrowthHistoryChart() {
+  const points = growthChartState.points;
+  if (!points.length || els.growthHistoryChartEmpty.classList.contains("hidden") === false) return;
+  const config = GROWTH_CHART_METRICS[growthChartState.metric] || GROWTH_CHART_METRICS.newCustomers;
+  const canvas = els.growthHistoryChart;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+  const dpr = window.devicePixelRatio || 1;
+  const width = rect.width;
+  const height = rect.height;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const pad = { left: width < 540 ? 42 : 58, right: 14, top: 13, bottom: 38 };
+  const plotWidth = Math.max(1, width - pad.left - pad.right);
+  const plotHeight = Math.max(1, height - pad.top - pad.bottom);
+  const bottom = pad.top + plotHeight;
+  const values = config.series.flatMap((series) => points.map((point) => Number(point[series.key]) || 0));
+  const maximum = niceChartMaximum(Math.max(...values, 1));
+  const yFor = (value) => bottom - (Math.max(0, Number(value) || 0) / maximum) * plotHeight;
+
+  ctx.font = "10px Inter, system-ui, sans-serif";
+  ctx.textBaseline = "middle";
+  for (let index = 0; index <= 4; index += 1) {
+    const y = pad.top + (plotHeight * index) / 4;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.strokeStyle = index === 4 ? "#dce2e8" : "rgba(199,208,218,.55)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#7a8794";
+    ctx.textAlign = "right";
+    ctx.fillText(growthChartAxisValue(maximum * (1 - index / 4), config.money), pad.left - 8, y);
+  }
+
+  const step = plotWidth / Math.max(points.length, 1);
+  const pointPositions = points.map((point, index) => ({
+    x: pad.left + step * (index + 0.5),
+    y: Math.min(...config.series.map((series) => yFor(point[series.key])))
+  }));
+
+  if (config.mode === "bar") {
+    const series = config.series[0];
+    const barWidth = Math.max(2, Math.min(32, step * 0.6));
+    points.forEach((point, index) => {
+      const value = Number(point[series.key]) || 0;
+      const x = pointPositions[index].x - barWidth / 2;
+      const y = yFor(value);
+      ctx.fillStyle = series.color;
+      ctx.globalAlpha = growthChartState.activeIndex === null || growthChartState.activeIndex === index ? 0.92 : 0.42;
+      ctx.fillRect(x, y, barWidth, Math.max(1, bottom - y));
+      if (growthChartState.activeIndex === index) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "#17212b";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x - 1, y - 1, barWidth + 2, Math.max(3, bottom - y + 2));
+      }
+    });
+    ctx.globalAlpha = 1;
+  } else {
+    config.series.forEach((series) => {
+      if (config.series.length === 1) {
+        const gradient = ctx.createLinearGradient(0, pad.top, 0, bottom);
+        gradient.addColorStop(0, `${series.color}35`);
+        gradient.addColorStop(1, `${series.color}00`);
+        ctx.beginPath();
+        points.forEach((point, index) => {
+          const x = pointPositions[index].x;
+          const y = yFor(point[series.key]);
+          if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.lineTo(pointPositions.at(-1).x, bottom);
+        ctx.lineTo(pointPositions[0].x, bottom);
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const x = pointPositions[index].x;
+        const y = yFor(point[series.key]);
+        if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = series.color;
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke();
+      if (points.length === 1 || growthChartState.activeIndex !== null) {
+        const indices = points.length === 1 ? [0] : [growthChartState.activeIndex];
+        indices.forEach((index) => {
+          ctx.beginPath();
+          ctx.arc(pointPositions[index].x, yFor(points[index][series.key]), 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#fff";
+          ctx.fill();
+          ctx.strokeStyle = series.color;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        });
+      }
+    });
+  }
+
+  const labelSlots = Math.min(points.length, width < 540 ? 4 : 6);
+  const labelIndices = new Set();
+  for (let slot = 0; slot < labelSlots; slot += 1) labelIndices.add(Math.round((points.length - 1) * slot / Math.max(labelSlots - 1, 1)));
+  ctx.fillStyle = "#7a8794";
+  ctx.textBaseline = "alphabetic";
+  [...labelIndices].forEach((index) => {
+    ctx.textAlign = index === 0 ? "left" : index === points.length - 1 ? "right" : "center";
+    const x = index === 0 ? pad.left : index === points.length - 1 ? width - pad.right : pointPositions[index].x;
+    ctx.fillText(formatGrowthAxisPeriod(points[index].date), x, height - 11);
+  });
+
+  growthChartState.geometry = { pad, width, height, pointPositions };
+  const first = points[0];
+  const last = points.at(-1);
+  const peak = Math.max(...values, 0);
+  const detail = growthChartState.metric === "reach"
+    ? `${formatNumber(points.length)} periods · ${formatGrowthPeriod(first.date)} to ${formatGrowthPeriod(last.date)} · latest ${formatNumber(last.totalCities)} cities and ${formatNumber(last.totalSites)} sites`
+    : `${formatNumber(points.length)} periods · ${formatGrowthPeriod(first.date)} to ${formatGrowthPeriod(last.date)} · peak ${growthChartValue(peak, config.money)} ${config.label.toLowerCase()}`;
+  els.growthHistoryChartDetails.textContent = detail;
+  canvas.setAttribute("aria-label", `${config.label} growth history. ${detail}.`);
+  if (growthChartState.activeIndex !== null) updateGrowthHistoryTooltip();
+}
+
+function updateGrowthHistoryTooltip() {
+  const index = growthChartState.activeIndex;
+  const point = growthChartState.points[index];
+  const position = growthChartState.geometry?.pointPositions[index];
+  if (!point || !position) {
+    els.growthHistoryTooltip.classList.add("hidden");
+    return;
+  }
+  const tooltip = els.growthHistoryTooltip;
+  tooltip.replaceChildren();
+  const title = document.createElement("strong");
+  title.textContent = formatGrowthPeriod(point.date);
+  const sales = document.createElement("span");
+  sales.innerHTML = `<b>${escapeHtml(formatNumber(point.newCustomers))}</b> new customers · <b>${escapeHtml(formatNumber(point.orders))}</b> orders · <b>${escapeHtml(money(point.revenue, growthChartState.currency))}</b>`;
+  const reach = document.createElement("span");
+  reach.innerHTML = `<b>${escapeHtml(formatNumber(point.totalCities))}</b> cities (${escapeHtml(formatSignedCount(point.newCities))}) · <b>${escapeHtml(formatNumber(point.totalSites))}</b> sites (${escapeHtml(formatSignedCount(point.newSites))})`;
+  tooltip.append(title, sales, reach);
+  els.growthHistoryChartDetails.textContent = `${formatGrowthPeriod(point.date)}: ${formatNumber(point.newCustomers)} new customers, ${formatNumber(point.orders)} paid orders, ${money(point.revenue, growthChartState.currency)}, ${formatNumber(point.totalCities)} total cities (${formatSignedCount(point.newCities)}), and ${formatNumber(point.totalSites)} total sites (${formatSignedCount(point.newSites)}).`;
+  const tooltipHalfWidth = Math.min(145, Math.max(100, els.growthHistoryChartWrap.clientWidth / 2 - 10));
+  tooltip.style.left = `${Math.max(tooltipHalfWidth, Math.min(growthChartState.geometry.width - tooltipHalfWidth, position.x))}px`;
+  tooltip.style.top = `${position.y}px`;
+  tooltip.classList.toggle("below", position.y < 92);
+  tooltip.classList.remove("hidden");
+}
+
+function selectGrowthChartPoint(index) {
+  if (!growthChartState.points.length) return;
+  growthChartState.activeIndex = Math.max(0, Math.min(growthChartState.points.length - 1, Number(index) || 0));
+  drawGrowthHistoryChart();
 }
 
 function formatGrowthPeriod(value) {
@@ -2302,6 +2516,58 @@ els.logoutBtn.addEventListener("click",()=>signOut()); els.refreshBtn.addEventLi
 els.refreshGrowthBtn.addEventListener("click",loadCurrentAnalyticsView);
 els.growthRange.addEventListener("change",loadCurrentAnalyticsView);
 document.querySelectorAll("[data-paid-analytics-view]").forEach(button=>button.addEventListener("click",()=>openPaidAnalyticsView(button.dataset.paidAnalyticsView)));
+document.querySelectorAll("[data-growth-chart-metric]").forEach((button) => button.addEventListener("click", () => {
+  growthChartState.metric = GROWTH_CHART_METRICS[button.dataset.growthChartMetric] ? button.dataset.growthChartMetric : "newCustomers";
+  growthChartState.activeIndex = null;
+  document.querySelectorAll("[data-growth-chart-metric]").forEach((item) => {
+    item.classList.toggle("active", item === button);
+    item.setAttribute("aria-pressed", String(item === button));
+  });
+  els.growthHistoryTooltip.classList.add("hidden");
+  if (growthChartState.points.length) {
+    renderGrowthChartLegend();
+    drawGrowthHistoryChart();
+  }
+}));
+els.growthHistoryChart.addEventListener("pointermove", (event) => {
+  const geometry = growthChartState.geometry;
+  if (!geometry || !growthChartState.points.length) return;
+  const rect = els.growthHistoryChart.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  if (x < geometry.pad.left || x > geometry.width - geometry.pad.right) {
+    if (growthChartState.activeIndex !== null) {
+      growthChartState.activeIndex = null;
+      els.growthHistoryTooltip.classList.add("hidden");
+      drawGrowthHistoryChart();
+    }
+    return;
+  }
+  const index = growthChartState.points.length === 1
+    ? 0
+    : Math.round((x - geometry.pointPositions[0].x) / ((geometry.width - geometry.pad.left - geometry.pad.right) / growthChartState.points.length));
+  if (index !== growthChartState.activeIndex) selectGrowthChartPoint(index);
+});
+els.growthHistoryChart.addEventListener("pointerleave", () => {
+  if (document.activeElement === els.growthHistoryChart || growthChartState.activeIndex === null) return;
+  growthChartState.activeIndex = null;
+  els.growthHistoryTooltip.classList.add("hidden");
+  drawGrowthHistoryChart();
+});
+els.growthHistoryChart.addEventListener("focus", () => {
+  if (growthChartState.points.length && growthChartState.activeIndex === null) selectGrowthChartPoint(growthChartState.points.length - 1);
+});
+els.growthHistoryChart.addEventListener("blur", () => {
+  growthChartState.activeIndex = null;
+  els.growthHistoryTooltip.classList.add("hidden");
+  drawGrowthHistoryChart();
+});
+els.growthHistoryChart.addEventListener("keydown", (event) => {
+  if (!growthChartState.points.length || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === "Home") selectGrowthChartPoint(0);
+  else if (event.key === "End") selectGrowthChartPoint(growthChartState.points.length - 1);
+  else selectGrowthChartPoint((growthChartState.activeIndex ?? growthChartState.points.length - 1) + (event.key === "ArrowRight" ? 1 : -1));
+});
 els.analyticsRange.addEventListener("change",loadAnalytics);
 document.querySelectorAll("[data-analytics-view]").forEach(button=>button.addEventListener("click",()=>openAnalyticsView(button.dataset.analyticsView)));
 els.cityExplorerSelect.addEventListener("change",()=>{selectedAnalyticsCity=els.cityExplorerSelect.value;renderSelectedCityExplorer();});
@@ -2351,7 +2617,10 @@ els.supportSearch?.addEventListener("input",()=>{clearTimeout(supportSearchTimer
 document.querySelector(".dashboard-trend")?.addEventListener("toggle",(event)=>{if(event.currentTarget.open&&dashboardData)requestAnimationFrame(()=>drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP"));});
 window.addEventListener("hashchange",()=>{const tab=location.hash.replace(/^#/,"");if(adminCode&&tab&&tab!==activeTab&&$(`tab-${tab}`))openTab(tab);});
 window.addEventListener("keydown",(event)=>{if(event.key!=="Escape")return;if(!els.promoEditOverlay.classList.contains("hidden"))closePromoEditor();else closeControlDrawer();});
-window.addEventListener("resize",()=>{if(dashboardData&&!$("tab-dashboard").classList.contains("hidden"))drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP");});
+window.addEventListener("resize",()=>{
+  if(dashboardData&&!$("tab-dashboard").classList.contains("hidden"))drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP");
+  if(growthChartState.points.length&&!$("tab-analytics").classList.contains("hidden")&&paidAnalyticsView==="growth")drawGrowthHistoryChart();
+});
 
 try { els.staySignedInInput.checked = Boolean(localStorage.getItem(SESSION_KEY)); } catch (_) {}
 if(adminCode) signIn(adminCode); else setTimeout(()=>els.adminCodeInput.focus(),0);

@@ -611,8 +611,26 @@ button.ramp-row:hover { background: var(--surface-2); }
 .market-empty { min-height: 140px; display: grid; place-items: center; }
 .paid-performance-panel { margin-bottom: 16px; }
 .growth-history-panel, .paid-market-panel, .usage-history-panel, .usage-performance-panel, .bluetooth-failure-panel { margin-bottom: 16px; }
-.growth-history-panel th:nth-child(n+2), .growth-history-panel td:nth-child(n+2), .usage-history-panel th:nth-child(n+2), .usage-history-panel td:nth-child(n+2), .usage-performance-panel th:nth-child(n+2), .usage-performance-panel td:nth-child(n+2) { text-align: right; }
-.growth-history-panel tbody tr:first-child, .usage-history-panel tbody tr:first-child { background: #f5faf9; }
+.usage-history-panel th:nth-child(n+2), .usage-history-panel td:nth-child(n+2), .usage-performance-panel th:nth-child(n+2), .usage-performance-panel td:nth-child(n+2) { text-align: right; }
+.usage-history-panel tbody tr:first-child { background: #f5faf9; }
+.growth-chart-controls { display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #edf1f4; }
+.growth-chart-controls button { min-height: 29px; padding: 4px 9px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: .64rem; font-weight: 750; cursor: pointer; }
+.growth-chart-controls button:hover { color: var(--ink); background: rgba(255,255,255,.65); }
+.growth-chart-controls button.active { color: var(--accent-strong); background: #fff; box-shadow: 0 1px 3px rgba(21,34,46,.1); }
+.growth-chart-legend { min-height: 22px; display: flex; align-items: center; gap: 14px; margin: 2px 0 4px 58px; color: var(--muted); font-size: .62rem; font-weight: 650; }
+.growth-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.growth-chart-legend i { width: 18px; height: 3px; display: inline-block; border-radius: 3px; background: var(--legend-color); }
+.growth-history-chart-wrap { position: relative; min-height: 306px; }
+.growth-history-chart-wrap canvas { width: 100%; height: 306px; display: block; border-radius: 6px; outline: none; }
+.growth-history-chart-wrap canvas:focus-visible { box-shadow: 0 0 0 2px rgba(23,107,99,.28); }
+.growth-history-chart-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: .72rem; }
+.growth-history-tooltip { position: absolute; z-index: 4; width: max-content; max-width: min(290px, calc(100% - 20px)); padding: 9px 10px; border: 1px solid #cbd5dd; border-radius: 6px; background: rgba(255,255,255,.98); box-shadow: 0 8px 24px rgba(15,29,43,.15); color: var(--ink); pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); }
+.growth-history-tooltip.below { transform: translate(-50%, 10px); }
+.growth-history-tooltip strong { display: block; margin-bottom: 4px; font-size: .7rem; }
+.growth-history-tooltip span { display: block; color: var(--muted); font-size: .61rem; line-height: 1.45; }
+.growth-history-tooltip b { color: var(--ink); font-weight: 750; }
+.growth-chart-footer { min-height: 29px; display: flex; justify-content: space-between; gap: 14px; padding: 8px 4px 0 58px; border-top: 1px solid #edf1f4; color: var(--muted); font-size: .61rem; }
+.growth-chart-keyboard-hint { text-align: right; }
 .usage-performance-panel td:first-child strong { display: block; }
 .bluetooth-failure-panel { padding: 0; overflow: hidden; }
 .bluetooth-failure-toggle { display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 14px; padding: 14px 16px; list-style: none; cursor: pointer; }
@@ -704,6 +722,13 @@ button.ramp-row:hover { background: var(--surface-2); }
   .usage-definition > span:last-child { flex-basis: calc(100% - 18px); margin-left: 14px; }
   .paid-analytics-nav { width: 100%; }
   .paid-analytics-nav button { flex: 1; min-width: 0; }
+  .growth-chart-controls { width: 100%; }
+  .growth-chart-controls button { flex: 1; padding-inline: 5px; }
+  .growth-chart-legend { margin-left: 42px; }
+  .growth-history-chart-wrap { min-height: 260px; }
+  .growth-history-chart-wrap canvas { height: 260px; }
+  .growth-chart-footer { padding-left: 42px; }
+  .growth-chart-keyboard-hint { display: none; }
   body { font-size: 13px; }
   .topbar { height: 58px; }
   .mobile-brand strong { display: none; }

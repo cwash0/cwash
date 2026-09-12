@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex,nofollow" />
   <title>CircuitWash Control</title>
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/admin.css?v=8" />
+  <link rel="stylesheet" href="assets/admin.css?v=9" />
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay">
@@ -197,7 +197,24 @@
             <article class="panel growth-kpi footprint"><span>Paid sites</span><strong id="paidSitesMetric">-</strong><small id="paidSitesSub">Sites with a paid customer</small></article>
           </section>
 
-          <section class="panel growth-history-panel"><div class="section-heading"><div><span class="eyebrow">Growth history</span><h2>What changed in each period</h2><p id="growthHistorySummary">A labelled record of first-time customers, sales, and newly reached locations.</p></div></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>New customers</th><th>Paid orders</th><th>Revenue</th><th>New cities</th><th>New sites</th><th>Total cities</th><th>Total sites</th></tr></thead><tbody id="growthHistoryRows"><tr><td colspan="8" class="muted">Loading growth history…</td></tr></tbody></table></div></section>
+          <section class="panel growth-history-panel">
+            <div class="section-heading">
+              <div><span class="eyebrow">Growth history</span><h2>What changed in each period</h2><p id="growthHistorySummary">First-time customers, sales, and newly reached locations over time.</p></div>
+              <div class="growth-chart-controls" role="group" aria-label="Growth chart metric">
+                <button class="active" data-growth-chart-metric="newCustomers" type="button" aria-pressed="true">Customers</button>
+                <button data-growth-chart-metric="orders" type="button" aria-pressed="false">Orders</button>
+                <button data-growth-chart-metric="revenue" type="button" aria-pressed="false">Revenue</button>
+                <button data-growth-chart-metric="reach" type="button" aria-pressed="false">Reach</button>
+              </div>
+            </div>
+            <div id="growthChartLegend" class="growth-chart-legend" aria-hidden="true"></div>
+            <div id="growthHistoryChartWrap" class="growth-history-chart-wrap">
+              <canvas id="growthHistoryChart" tabindex="0" role="img" aria-describedby="growthHistoryChartDetails" aria-label="Paid growth history chart"></canvas>
+              <div id="growthHistoryTooltip" class="growth-history-tooltip hidden"></div>
+              <div id="growthHistoryChartEmpty" class="growth-history-chart-empty">Loading growth history…</div>
+            </div>
+            <div class="growth-chart-footer"><span id="growthHistoryChartDetails" aria-live="polite">Loading growth history…</span><span class="growth-chart-keyboard-hint">Hover a period or use the arrow keys for details</span></div>
+          </section>
 
           <section class="panel paid-market-panel"><div class="section-heading"><div><span class="eyebrow">New locations</span><h2>Places reached for the first time</h2><p>Only cities whose first positive-value completed order happened in this window.</p></div></div><div id="newPaidMarkets" class="paid-market-list"></div></section>
 
@@ -365,7 +382,7 @@
     <div class="modal-card email-confirm-card"><div class="modal-head"><div><span class="eyebrow">Final confirmation</span><h2 id="emailSendConfirmTitle">Submit customer email</h2><p>This action creates provider deliveries for the confirmed recipients.</p></div><button id="closeEmailSendConfirmBtn" class="icon-button" type="button" aria-label="Close">&times;</button></div><dl class="email-confirm-list"><div><dt>Subject</dt><dd id="emailConfirmSubject">-</dd></div><div><dt>Recipients</dt><dd id="emailConfirmRecipients">-</dd></div><div><dt>Audience</dt><dd id="emailConfirmAudience">-</dd></div><div><dt>Sender</dt><dd id="emailConfirmSender">-</dd></div><div><dt>Delivery</dt><dd id="emailConfirmDelivery">Send now</dd></div></dl><div class="email-confirm-preview"><iframe id="emailConfirmFrame" title="Confirmed email preview"></iframe></div><div class="modal-actions"><button id="cancelEmailSendConfirmBtn" class="button" type="button">Go back</button><button id="confirmEmailSendBtn" class="button primary" type="button">Send email</button></div><div id="emailConfirmMessage" class="message" aria-live="polite"></div></div>
   </div>
 
-  <script src="assets/admin.js?v=control-centre-14"></script>
+  <script src="assets/admin.js?v=control-centre-16"></script>
   <script src="assets/email-builder.js?v=6"></script>
 </body>
 </html>
