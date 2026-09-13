@@ -1,11 +1,6 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { pool } = require("./_db");
 const { ensureSupportSchema } = require("./_support-schema");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
 const RESEND_WEBHOOK_SECRET = String(process.env.RESEND_WEBHOOK_SECRET || "").trim();

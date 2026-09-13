@@ -1,12 +1,7 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { pool } = require("./_db");
 const { getSiteById } = require("./_site-data");
 const { ensureOrderStorage } = require("./_order-storage");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const PROMPT_EXPIRY_DAYS = Math.max(1, Math.min(90, Number(process.env.FEEDBACK_INVITE_DAYS || 30)));
 const PROMPT_DISMISS_COOLDOWN_DAYS = Math.max(1, Math.min(180, Number(process.env.FEEDBACK_DISMISS_DAYS || 30)));

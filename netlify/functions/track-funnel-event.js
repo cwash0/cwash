@@ -1,11 +1,6 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { pool } = require("./_db");
 const { normalizeAnalyticsEnvironment } = require("./_analytics-validity");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const ALLOWED_EVENTS = new Set([
   "landing_view",

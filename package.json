@@ -15,7 +15,8 @@
     "test:support": "node scripts/test-support-tickets.js",
     "test:orders": "node scripts/test-order-storage.js",
     "test:site-selector": "node scripts/test-site-selector.js",
-    "test": "npm run test:funnel && npm run test:analytics-scale && npm run test:coverage && npm run test:support && npm run test:orders && npm run test:site-selector"
+    "test:database": "node scripts/test-database-config.js",
+    "test": "npm run test:database && npm run test:funnel && npm run test:analytics-scale && npm run test:coverage && npm run test:support && npm run test:orders && npm run test:site-selector"
   },
   "dependencies": {
     "pg": "^8.12.0"

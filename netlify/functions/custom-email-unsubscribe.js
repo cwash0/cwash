@@ -1,10 +1,5 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+const { databaseUrl, pool } = require("./_db");
 
 exports.handler = async (event) => {
   const params = event.queryStringParameters || {};
@@ -26,7 +21,7 @@ exports.handler = async (event) => {
 
 function isValidToken(encoded, signature) {
   if (!encoded || !signature) return false;
-  const secret = String(process.env.EMAIL_UNSUBSCRIBE_SECRET || process.env.ADMIN_ACCESS_CODE || process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL || "");
+  const secret = String(process.env.EMAIL_UNSUBSCRIBE_SECRET || process.env.ADMIN_ACCESS_CODE || databaseUrl || "");
   if (!secret) return false;
   const expected = crypto.createHmac("sha256", secret).update(encoded).digest("base64url");
   const left = Buffer.from(signature); const right = Buffer.from(expected);

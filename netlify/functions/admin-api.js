@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { databaseUrl, pool } = require("./_db");
 const { getPublicSites, searchPublicSites } = require("./_site-data");
 // Reload this helper with the admin function during local preview hot updates.
 delete require.cache[require.resolve("./_custom-email")];
@@ -10,11 +10,6 @@ const { ensureSupportSchema } = require("./_support-schema");
 const { calculateOrganicSpread } = require("./_city-coverage");
 const { getPaidGrowthAnalytics } = require("./_paid-growth-analytics");
 const { getUsageAnalytics } = require("./_usage-analytics");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const ADMIN_ACCESS_CODE = String(process.env.ADMIN_ACCESS_CODE || "").trim();
 const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
@@ -554,7 +549,7 @@ function headerValue(headers = {}, name) {
 }
 
 function loginAttemptFingerprint(scope, value) {
-  const key = ADMIN_ACCESS_CODE || DATABASE_URL || "admin-login-attempts";
+  const key = ADMIN_ACCESS_CODE || databaseUrl || "admin-login-attempts";
   return crypto.createHmac("sha256", key).update(`${scope}:${String(value || "")}`).digest("hex");
 }
 

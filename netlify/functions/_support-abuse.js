@@ -11,8 +11,8 @@ function abuseSecret() {
     process.env.SUPPORT_CONTEXT_SALT ||
     process.env.SITE_HIT_SALT ||
     process.env.CREATE_ORDER_RATE_LIMIT_SALT ||
-    process.env.NETLIFY_DATABASE_URL ||
-    process.env.DATABASE_URL ||
+    process.env.DB_URL_POOLED ||
+    process.env.DB_URL ||
     "circuitwash-support-abuse"
   );
 }

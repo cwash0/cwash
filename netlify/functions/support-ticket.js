@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { pool } = require("./_db");
 const { getSiteById } = require("./_site-data");
 const { ensureOrderStorage } = require("./_order-storage");
 const { ensureSupportSchema } = require("./_support-schema");
@@ -17,11 +17,6 @@ const {
   verifyFormToken,
   verifyTurnstile
 } = require("./_support-abuse");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const CONTEXT_SALT = String(
   process.env.SUPPORT_CONTEXT_SALT ||

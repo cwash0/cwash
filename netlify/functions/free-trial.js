@@ -1,13 +1,8 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { Pool } = require("pg");
+const { pool } = require("./_db");
 const { getSiteById } = require("./_site-data");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const TRIAL_SETTING_KEY = "homepage_free_trial_enabled";
 const TRIAL_SITE_LIMITS_KEY = "free_trial_site_weekly_limits";

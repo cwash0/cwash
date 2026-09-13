@@ -1,12 +1,7 @@
 const crypto = require("crypto");
-const { Pool } = require("pg");
+const { pool } = require("./_db");
 const { getSiteById } = require("./_site-data");
 const { ensureOrderStorage } = require("./_order-storage");
-
-const pool = new Pool({
-  connectionString: process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
 
 const STRIPE_API_BASE = "https://api.stripe.com/v1";
 const CURRENCY = normalizeCurrency(process.env.ACCESS_CODE_CURRENCY || "GBP");
