@@ -137,6 +137,14 @@ async function initialiseLanding() {
     return;
   }
 
+  // Local state is enough to choose the useful destination immediately. The
+  // server check below can still correct it without holding the CTA disabled.
+  if (localClaim) {
+    setPrimaryAction({ href: claimedTrialHref(localClaim), actionKind: "trial", trialEligibility: "claimed" });
+  } else {
+    setPrimaryAction({ href: "/trial.html", actionKind: "trial", trialEligibility: "available" });
+  }
+
   try {
     const response = await fetch("/.netlify/functions/free-trial", {
       method: "POST",

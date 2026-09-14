@@ -22,6 +22,7 @@ const DEFAULT_WASHER_CYCLES = {
 };
 
 let schemaReady = false;
+let schemaReadyPromise = null;
 let cachedSiteMap = null;
 
 exports.handler = async (event) => {
@@ -34,12 +35,19 @@ exports.handler = async (event) => {
       return json({ ok: false, error: "bad_request" }, 400);
     }
 
-    await ensureSchema();
     const action = String(body.action || "status").trim();
-    if (action === "status") return json({ ok: true, enabled: await isTrialEnabled() });
-    if (action === "site_status") return json({ ok: true, ...(await getTrialSiteStatus(body)) });
+    if (action === "status") {
+      return json({ ok: true, enabled: await withSchemaFallback(() => isTrialEnabled()) });
+    }
+    if (action === "site_status") {
+      return json({ ok: true, ...(await withSchemaFallback(() => getTrialSiteStatus(body))) });
+    }
+    if (action === "session") {
+      return json({ ok: true, ...(await withSchemaFallback(() => getTrialSession(body))) });
+    }
+
+    await ensureSchema();
     if (action === "claim") return json({ ok: true, ...(await claimTrial(body)) }, 201);
-    if (action === "session") return json({ ok: true, ...(await getTrialSession(body)) });
     if (action === "change_site") return json({ ok: true, ...(await changeTrialSite(body)) });
     if (action === "prepare_activation") return json({ ok: true, ...(await prepareTrialActivation(body)) });
     if (action === "complete_activation") return json({ ok: true, ...(await completeTrialActivation(body)) });
@@ -63,6 +71,21 @@ class TrialError extends Error {
 
 async function ensureSchema() {
   if (schemaReady) return;
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = prepareSchema().catch((error) => {
+      schemaReadyPromise = null;
+      throw error;
+    });
+  }
+  await schemaReadyPromise;
+}
+
+async function prepareSchema() {
+  if (await hasCurrentSchema()) {
+    schemaReady = true;
+    return;
+  }
+
   await pool.query(`
     create table if not exists app_settings (
       key text primary key,
@@ -103,6 +126,44 @@ async function ensureSchema() {
   await pool.query(`create unique index if not exists free_trial_claims_trial_token_idx on free_trial_claims(trial_token_hash) where trial_token_hash is not null`);
   await pool.query(`create index if not exists free_trial_claims_created_idx on free_trial_claims(created_at desc)`);
   schemaReady = true;
+}
+
+async function hasCurrentSchema() {
+  try {
+    const result = await pool.query(`
+      select
+        (select count(*) from (
+          select key, value, updated_at from app_settings limit 0
+        ) settings_shape) as settings_shape,
+        (select count(*) from (
+          select id, browser_token_hash, site_id, customer_email, trial_token_hash,
+                 created_at, updated_at, activated_at, activation_machine_id,
+                 activation_cycle_key, activation_status, activation_prepared_at
+          from free_trial_claims
+          limit 0
+        ) claims_shape) as claims_shape,
+        to_regclass('public.free_trial_claims_trial_token_idx') is not null as token_index_ready,
+        to_regclass('public.free_trial_claims_created_idx') is not null as created_index_ready
+    `);
+    return Boolean(result.rows[0]?.token_index_ready && result.rows[0]?.created_index_ready);
+  } catch (error) {
+    if (isSchemaCompatibilityError(error)) return false;
+    throw error;
+  }
+}
+
+async function withSchemaFallback(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isSchemaCompatibilityError(error)) throw error;
+    await ensureSchema();
+    return operation();
+  }
+}
+
+function isSchemaCompatibilityError(error) {
+  return error?.code === "42P01" || error?.code === "42703";
 }
 
 async function isTrialEnabled(db = pool) {
