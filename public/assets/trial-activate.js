@@ -1230,8 +1230,9 @@ async function startMachine(machine, cycleKey, label) {
     els.allowance.textContent = "Free activation used";
     setStatus(`${machine.name} started`, "ok");
     setActivity(`${machine.name} started`, "", "ok");
-    await disconnect("complete");
-    setTimeout(() => showActivationOutcome("success", context), 650);
+    // Keep the successful machine connection open. Disconnecting here triggers
+    // the browser's Bluetooth overlay on top of the savings screen.
+    showActivationOutcome("success", context);
   } catch (error) {
     if (error.code === "trial_used") {
       try { applySession(await api("session")); }
@@ -1272,10 +1273,8 @@ async function disconnect(reason = "manual") {
     resetMessages("Disconnected");
     setConnectedUI(false);
     updateConnectLabel();
-    if (reason !== "complete") {
-      setStatus("ready to connect");
-      if (reason !== "machine-changed") setActivity("Ready", "");
-    }
+    setStatus("ready to connect");
+    if (reason !== "machine-changed") setActivity("Ready", "");
   }
 }
 
@@ -1283,12 +1282,14 @@ function onDisconnected() {
   const failureMachine = selectedMachine();
   const failureDeviceName = connectedDeviceName;
   unexpectedBluetoothDisconnectReported = true;
-  reportBluetoothFailure("bluetooth_unexpected_disconnect", {
-    stage: bluetoothFailureStage === "idle" ? "connected" : bluetoothFailureStage,
-    error: new Error("The Bluetooth device disconnected unexpectedly"),
-    machine: failureMachine,
-    bluetoothDeviceName: failureDeviceName
-  });
+  if (!completed) {
+    reportBluetoothFailure("bluetooth_unexpected_disconnect", {
+      stage: bluetoothFailureStage === "idle" ? "connected" : bluetoothFailureStage,
+      error: new Error("The Bluetooth device disconnected unexpectedly"),
+      machine: failureMachine,
+      bluetoothDeviceName: failureDeviceName
+    });
+  }
   device = null; server = null; service = null; rxChar = null; txChar = null; connectedDeviceName = "";
   bluetoothFailureStage = "idle";
   resetMessages("Device disconnected");
