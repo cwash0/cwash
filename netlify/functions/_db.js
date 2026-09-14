@@ -10,7 +10,9 @@ function createPoolConfig(env = process.env) {
     connectionString: getDatabaseUrl(env) || undefined,
     application_name: "circuitwash-netlify",
     ssl: { rejectUnauthorized: false },
-    max: 1,
+    // This app deliberately fans out dashboard/reporting queries. Four clients
+    // preserve that concurrency without returning to pg's server-heavy default of ten.
+    max: 4,
     min: 0,
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 10_000,
