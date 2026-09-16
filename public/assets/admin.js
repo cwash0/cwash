@@ -12,6 +12,7 @@ let supportFilter = "UNRESOLVED";
 let supportSearchTimer = null;
 let selectedTicketId = null;
 let feedbackData = null;
+let freeTrialData = null;
 let feedbackRecipientFilter = "";
 let ordersData = [];
 let orderSearchTerm = "";
@@ -37,6 +38,7 @@ const sortState = {
   orders: { key: "date", direction: "desc" },
   codes: { key: "createdAt", direction: "desc" },
   promos: { key: "createdAt", direction: "desc" },
+  freeTrials: { key: "lastClaimedAt", direction: "desc" },
   feedbackResponses: { key: "submittedAt", direction: "desc" },
   feedbackInvitations: { key: "sentAt", direction: "desc" }
 };
@@ -1915,6 +1917,7 @@ async function loadFreeTrials() {
   els.freeTrialRows.innerHTML = '<tr><td colspan="5" class="muted">Loading free trials...</td></tr>';
   try {
     const data = await api("free_trial_data");
+    freeTrialData = data;
     renderFreeTrials(data);
     setMessage(els.freeTrialMessage, "", "");
   } catch (error) {
@@ -1934,7 +1937,8 @@ function renderFreeTrials(data = {}) {
   els.freeTrialRateMetric.textContent = `${formatNumber(summary.activationRate)}%`;
   renderFreeTrialLimits(data.limits || []);
   els.freeTrialRows.innerHTML = "";
-  const siteStats = Array.isArray(data.siteStats) ? data.siteStats : aggregateFreeTrialSiteStats(data.trials || []);
+  const rawSiteStats = Array.isArray(data.siteStats) ? data.siteStats : aggregateFreeTrialSiteStats(data.trials || []);
+  const siteStats = sortItems("freeTrials", rawSiteStats);
   if (!siteStats.length) {
     els.freeTrialRows.innerHTML = '<tr><td colspan="5" class="muted">No free trials have been claimed yet.</td></tr>';
     return;
@@ -2334,6 +2338,7 @@ const SORT_ACCESSORS = {
   orders: { date: item => dateValue(item.completedAt || item.createdAt), orderId: item => item.orderId, siteName: item => item.siteName, orderType: item => item.orderType, paymentMethod: item => item.paymentMethod, code: item => item.code, email: item => item.email, amount: item => Number(item.amount) || 0, status: item => item.status },
   codes: { createdAt: item => dateValue(item.createdAt), code: item => item.code, siteName: item => item.siteName, source: item => item.source, weeklyUses: item => Number(item.weeklyUses) || 0, weeklyLimit: item => Number(item.weeklyLimit) || 0, maxTotalUses: item => Number(item.maxTotalUses) || Number.MAX_SAFE_INTEGER, uses: item => Number(item.uses) || 0, lastUsedAt: item => dateValue(item.lastUsedAt), expiresAt: item => dateValue(item.expiresAt), active: item => item.active ? 1 : 0 },
   promos: { createdAt: item => dateValue(item.createdAt), code: item => item.code, discountValue: item => Number(item.discountValue) || 0, siteName: item => item.siteName || "", maxRedemptions: item => Number(item.maxRedemptions) || Number.MAX_SAFE_INTEGER, successfulOrders: item => Number(item.successfulOrders) || 0, createdOrders: item => Number(item.createdOrders) || 0, customers: item => Number(item.customers) || 0, discountTotal: item => Number(item.discountTotal) || 0, netRevenue: item => Number(item.netRevenue) || 0, lastUsedAt: item => dateValue(item.lastUsedAt), active: item => item.active ? 1 : 0 },
+  freeTrials: { lastClaimedAt: item => dateValue(item.lastClaimedAt), lastActivatedAt: item => dateValue(item.lastActivatedAt) },
   feedbackResponses: { submittedAt: item => dateValue(item.submittedAt), email: item => item.email, siteName: item => item.siteName, rating: item => Number(item.rating) || 0, recommend: item => item.recommend, comments: item => item.comments },
   feedbackInvitations: { sentAt: item => dateValue(item.sentAt || item.createdAt), email: item => item.email, siteName: item => item.siteName, status: item => item.status, response: item => dateValue(item.respondedAt) || item.error || "" }
 };
@@ -2383,6 +2388,9 @@ function updateSortHeaders() {
   document.querySelectorAll("th[data-sort-table][data-sort-key]").forEach((th) => {
     const state = sortState[th.dataset.sortTable];
     const active = state && state.key === th.dataset.sortKey;
+    const button = th.querySelector(".sort-button");
+    button?.classList.toggle("active", Boolean(active));
+    button?.classList.toggle("asc", Boolean(active && state.direction === "asc"));
     th.setAttribute("aria-sort", active ? (state.direction === "asc" ? "ascending" : "descending") : "none");
   });
 }
@@ -2390,13 +2398,14 @@ function updateSortHeaders() {
 function changeSort(tableName, key) {
   const state = sortState[tableName] || { key, direction: "asc" };
   if (state.key === key) state.direction = state.direction === "asc" ? "desc" : "asc";
-  else { state.key = key; state.direction = ["date", "createdAt", "submittedAt", "sentAt", "lastUsedAt", "expiresAt", "amount", "weeklyUses", "weeklyLimit", "uses", "rating"].includes(key) ? "desc" : "asc"; }
+  else { state.key = key; state.direction = ["date", "createdAt", "submittedAt", "sentAt", "lastUsedAt", "lastClaimedAt", "lastActivatedAt", "expiresAt", "amount", "weeklyUses", "weeklyLimit", "uses", "rating"].includes(key) ? "desc" : "asc"; }
   sortState[tableName] = state;
   updateSortHeaders();
   if (tableName === "recentOrders") renderOrders(sortItems("recentOrders", dashboardData?.recentOrders || []), els.recentOrdersBody, true);
   else if (tableName === "orders") renderFilteredOrders();
   else if (tableName === "codes") renderCodes();
   else if (tableName === "promos") renderPromos();
+  else if (tableName === "freeTrials") renderFreeTrials(freeTrialData || {});
   else if (tableName === "feedbackResponses") renderFeedbackResponses();
   else if (tableName === "feedbackInvitations") renderFeedbackInvitations();
 }
