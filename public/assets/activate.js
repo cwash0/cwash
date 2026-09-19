@@ -1662,6 +1662,9 @@ async function writeAscii(text) {
 async function sendAndObserve(text, expectedAck, waitMs) {
   notificationText = "";
   await writeAscii(text);
+  if (!rxChar) {
+    return { acknowledged: false, response: "", notificationsAvailable: false };
+  }
   await new Promise((resolve) => setTimeout(resolve, waitMs));
 
   const response = notificationText;
@@ -1682,7 +1685,7 @@ async function sendAndObserve(text, expectedAck, waitMs) {
 
 async function sendHandshakeWithRetry() {
   let observation = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1200);
-  if (observation.acknowledged || !isConnected()) return observation;
+  if (!rxChar || observation.acknowledged || !isConnected()) return observation;
   await new Promise((resolve) => setTimeout(resolve, 350));
   const retry = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1500);
   return {
@@ -1704,6 +1707,23 @@ async function enableRxNotifications() {
   } catch (error) {
     try { characteristic.removeEventListener("characteristicvaluechanged", onNotify); } catch {}
     throw error;
+  }
+}
+
+async function tryEnableRxNotifications(machine) {
+  try {
+    await enableRxNotifications();
+    return true;
+  } catch (error) {
+    rxChar = null;
+    try {
+      reportBluetoothFailure("bluetooth_notification_subscription_failed", {
+        stage: "rx_notifications",
+        error,
+        machine
+      });
+    } catch (_) {}
+    return false;
   }
 }
 
@@ -1835,7 +1855,7 @@ async function runSequence(machine, cycleKey) {
   try {
     bluetoothFailureStage = stage;
     resetRx();
-    await enableRxNotifications();
+    await tryEnableRxNotifications(machine);
     stage = "handshake";
     bluetoothFailureStage = stage;
     const handshake = await sendHandshakeWithRetry();

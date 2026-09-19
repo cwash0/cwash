@@ -26,7 +26,6 @@ const ACK = {
   ACTIVATE: "[ACK:ACTIVATE]",
   EXEC: "[ACK:EXEC]"
 };
-const START_CONFIRMATION_DELAYS_MS = [600, 1000, 1500, 2200, 3000];
 const DEFAULT_WASHER_CYCLES = {
   standardEco: "Standard Eco",
   extraWash: "Extra Wash",
@@ -1027,6 +1026,9 @@ async function writeMachineCommand(command) {
 async function sendAndObserve(command, expectedAck, waitMs) {
   notificationText = "";
   await writeMachineCommand(command);
+  if (!rxChar) {
+    return { acknowledged: false, response: "", notificationsAvailable: false };
+  }
   await new Promise((resolve) => setTimeout(resolve, waitMs));
 
   const response = notificationText;
@@ -1047,7 +1049,7 @@ async function sendAndObserve(command, expectedAck, waitMs) {
 
 async function sendHandshakeWithRetry() {
   const observation = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1200);
-  if (observation.acknowledged || !isConnected()) return observation;
+  if (!rxChar || observation.acknowledged || !isConnected()) return observation;
   await new Promise((resolve) => setTimeout(resolve, 350));
   const retry = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1500);
   return {
@@ -1069,6 +1071,23 @@ async function enableRxNotifications() {
   } catch (error) {
     try { characteristic.removeEventListener("characteristicvaluechanged", onNotify); } catch (_) {}
     throw error;
+  }
+}
+
+async function tryEnableRxNotifications(machine) {
+  try {
+    await enableRxNotifications();
+    return true;
+  } catch (error) {
+    rxChar = null;
+    try {
+      reportBluetoothFailure("bluetooth_notification_subscription_failed", {
+        stage: "rx_notifications",
+        error,
+        machine
+      });
+    } catch (_) {}
+    return false;
   }
 }
 
@@ -1188,31 +1207,6 @@ async function checkOccupied() {
   }
 }
 
-async function confirmTrialMachineStarted() {
-  let successfulReads = 0;
-  let lastError = null;
-  let lastRaw = "";
-  for (const delayMs of START_CONFIRMATION_DELAYS_MS) {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    if (!isConnected()) return { confirmed: false, reason: "disconnected", successfulReads, lastRaw };
-    try {
-      const state = await readTrialOccupancy();
-      successfulReads += 1;
-      lastRaw = state.raw;
-      if (state.inUse) return { confirmed: true, reason: "occupied", successfulReads, lastRaw };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  return {
-    confirmed: false,
-    reason: successfulReads ? "not_in_use" : "occupancy_read_failed",
-    successfulReads,
-    lastRaw,
-    error: lastError
-  };
-}
-
 async function cancelTrialActivation(activationId, reason = "unconfirmed") {
   if (!activationId) return;
   try { await api("cancel_activation", { activationId, reason }); } catch (_) {}
@@ -1236,10 +1230,10 @@ async function startMachine(machine, cycleKey, label) {
     stage = "rx_notifications";
     bluetoothFailureStage = stage;
     resetMessages();
-    await enableRxNotifications();
+    await tryEnableRxNotifications(machine);
     stage = "handshake";
     bluetoothFailureStage = stage;
-    const handshake = await sendHandshakeWithRetry();
+    await sendHandshakeWithRetry();
     stage = "authorization";
     bluetoothFailureStage = stage;
     const prepared = await api("prepare_activation", { machineId: machineKey(machine), cycleKey });
@@ -1247,25 +1241,11 @@ async function startMachine(machine, cycleKey, label) {
     context = { ...context, activation: { id: prepared.activationId, status: prepared.activationStatus, preparedAt: prepared.preparedAt } };
     stage = "activation";
     bluetoothFailureStage = stage;
-    const activation = await sendAndObserve(String(prepared.activationCommand), ACK.ACTIVATE, 1200);
+    await sendAndObserve(String(prepared.activationCommand), ACK.ACTIVATE, 1200);
     stage = "execution";
     bluetoothFailureStage = stage;
-    const execution = await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
-    stage = "execution-observed";
-    bluetoothFailureStage = "confirmation";
-    setActivity("Confirming start", machine.name, "warn");
-    const confirmation = await confirmTrialMachineStarted();
-    if (!confirmation.confirmed) {
-      const error = new Error(
-        `Machine start unconfirmed (handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
-      );
-      error.code = "activation_unconfirmed";
-      reportBluetoothFailure("bluetooth_activation_failed", { stage: "confirmation", error, machine });
-      await cancelTrialActivation(prepared.activationId, confirmation.reason);
-      if (isConnected()) await disconnect("sequence-unconfirmed");
-      showActivationOutcome("uncertain", context);
-      return;
-    }
+    await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
+    stage = "execution-sent";
     stage = "completion";
     bluetoothFailureStage = stage;
     const completion = await api("complete_activation", { activationId: prepared.activationId });
@@ -1302,7 +1282,7 @@ async function startMachine(machine, cycleKey, label) {
       els.outcomeReassurance.textContent = "No free start was used. Try again later or continue with paid access for this site.";
       return;
     }
-    const uncertain = error.code !== "machine_error" && ["activation", "execution", "execution-observed", "completed"].includes(stage);
+    const uncertain = error.code !== "machine_error" && ["activation", "execution", "execution-sent", "completion", "completed"].includes(stage);
     showActivationOutcome(uncertain ? "uncertain" : "failure", context);
   }
   bluetoothFailureStage = isConnected() ? "connected" : "idle";
