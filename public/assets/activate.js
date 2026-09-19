@@ -1747,7 +1747,7 @@ async function requestActivationCommand(machine, cycleKey) {
   return String(data.activationCommand);
 }
 
-async function completeTrialActivationIfNeeded() {
+async function completeTrialActivationIfNeeded(machine, cycleKey) {
   if (!activeAccessCode || !isFreeTrialCode()) return;
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -1756,7 +1756,12 @@ async function completeTrialActivationIfNeeded() {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "complete_activation", code: activeAccessCode })
+        body: JSON.stringify({
+          action: "complete_activation",
+          code: activeAccessCode,
+          machineId: getMachineKey(machine),
+          cycleKey
+        })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) throw new Error(data.error || `Activation completion failed (${res.status})`);
@@ -1792,7 +1797,7 @@ async function runSequence(machine, cycleKey) {
     await sendAndWatchForError(CMD.EXEC, 2000);
     stage = "completion";
     bluetoothFailureStage = stage;
-    await completeTrialActivationIfNeeded();
+    await completeTrialActivationIfNeeded(machine, cycleKey);
 
     preserveSuccessDisconnectUI = true;
     clearTimeout(cycleCooldownTimer);

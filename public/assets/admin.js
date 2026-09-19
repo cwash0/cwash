@@ -32,6 +32,8 @@ let promoSiteSearchTimer = null;
 let trialLimitSiteSearchTimer = null;
 let supportTicketsData = [];
 let activeDrawer = null;
+let codeUsageReturnFocus = null;
+let codeUsageRequestId = 0;
 const selectedFeedbackEmails = new Set();
 const sortState = {
   recentOrders: { key: "date", direction: "desc" },
@@ -61,6 +63,7 @@ const els = {
   ordersBody: $("ordersBody"), reloadOrdersBtn: $("reloadOrdersBtn"), orderStatusFilter: $("orderStatusFilter"), orderSearch: $("orderSearch"), clearOrderSearchBtn: $("clearOrderSearchBtn"), ordersSummary: $("ordersSummary"), cleanupCreatedHours: $("cleanupCreatedHours"), cleanupCreatedOrdersBtn: $("cleanupCreatedOrdersBtn"), ordersMessage: $("ordersMessage"), siteSearchMode: $("siteSearchMode"), adminSiteSearch: $("adminSiteSearch"),
   siteResults: $("siteResults"), selectedAdminSite: $("selectedAdminSite"), newCode: $("newCode"), newCodeWeeklyLimit: $("newCodeWeeklyLimit"), generateCodeBtn: $("generateCodeBtn"), createCodeBtn: $("createCodeBtn"),
   codeCreateMessage: $("codeCreateMessage"), codeFilter: $("codeFilter"), reloadCodesBtn: $("reloadCodesBtn"), codesBody: $("codesBody"),
+  codeUsageOverlay: $("codeUsageOverlay"), codeUsageTitle: $("codeUsageTitle"), codeUsageCode: $("codeUsageCode"), codeUsageSummary: $("codeUsageSummary"), codeUsageHistoryRows: $("codeUsageHistoryRows"), codeUsageHistoryNote: $("codeUsageHistoryNote"), codeUsageWeekRows: $("codeUsageWeekRows"), closeCodeUsageBtn: $("closeCodeUsageBtn"), dismissCodeUsageBtn: $("dismissCodeUsageBtn"),
   newPromoCode: $("newPromoCode"), promoDiscountType: $("promoDiscountType"), promoDiscountValue: $("promoDiscountValue"), promoMaxRedemptions: $("promoMaxRedemptions"), promoSiteSearch: $("promoSiteSearch"), promoSiteResults: $("promoSiteResults"), selectedPromoSite: $("selectedPromoSite"), promoFreeSite: $("promoFreeSite"), promoOneTimeUse: $("promoOneTimeUse"), promoOneTimeAccess: $("promoOneTimeAccess"), createPromoBtn: $("createPromoBtn"), promoCreateMessage: $("promoCreateMessage"), promoFilter: $("promoFilter"), reloadPromosBtn: $("reloadPromosBtn"), promosBody: $("promosBody"),
   freeTrialEnabledInput: $("freeTrialEnabledInput"), freeTrialEnabledStatus: $("freeTrialEnabledStatus"), freeTrialIssuedMetric: $("freeTrialIssuedMetric"), freeTrialActivatedMetric: $("freeTrialActivatedMetric"), freeTrialWaitingMetric: $("freeTrialWaitingMetric"), freeTrialRateMetric: $("freeTrialRateMetric"), freeTrialRows: $("freeTrialRows"), reloadFreeTrialsBtn: $("reloadFreeTrialsBtn"), freeTrialMessage: $("freeTrialMessage"), trialLimitSiteSearch: $("trialLimitSiteSearch"), trialLimitSiteResults: $("trialLimitSiteResults"), selectedTrialLimitSite: $("selectedTrialLimitSite"), trialWeeklyLimitInput: $("trialWeeklyLimitInput"), saveTrialLimitBtn: $("saveTrialLimitBtn"), clearTrialLimitBtn: $("clearTrialLimitBtn"), freeTrialLimitRows: $("freeTrialLimitRows"),
   promoEditOverlay: $("promoEditOverlay"), promoEditCode: $("promoEditCode"), promoEditDiscountType: $("promoEditDiscountType"), promoEditDiscountValue: $("promoEditDiscountValue"), promoEditMaxRedemptions: $("promoEditMaxRedemptions"), promoEditOneTimeUse: $("promoEditOneTimeUse"), promoEditOneTimeAccess: $("promoEditOneTimeAccess"), promoEditMessage: $("promoEditMessage"), closePromoEditBtn: $("closePromoEditBtn"), cancelPromoEditBtn: $("cancelPromoEditBtn"), savePromoEditBtn: $("savePromoEditBtn"),
@@ -1838,6 +1841,9 @@ function renderCodes() {
   if(!codes.length){els.codesBody.innerHTML='<tr><td colspan="11" class="muted">No codes found.</td></tr>';return;}
   codes.forEach((code)=>{
     const tr=document.createElement("tr");
+    tr.className="code-row";tr.tabIndex=0;tr.setAttribute("aria-haspopup","dialog");tr.setAttribute("aria-label",`View machine use history for ${code.code}`);
+    tr.addEventListener("click",(event)=>{if(!event.target.closest("button,input,a,select,textarea,label"))openCodeUsageHistory(code,tr);});
+    tr.addEventListener("keydown",(event)=>{if(event.target===tr&&(event.key==="Enter"||event.key===" ")){event.preventDefault();openCodeUsageHistory(code,tr);}});
     appendCell(tr,code.code,"mono"); appendCell(tr,code.siteName); appendCell(tr,code.source||"—");
     appendCell(tr,`${formatNumber(code.weeklyUses)} / ${formatNumber(code.weeklyLimit)}`);
     const limitTd=document.createElement("td");
@@ -1848,13 +1854,94 @@ function renderCodes() {
     appendCell(tr,formatCodeTotalLimit(code)); appendCell(tr,formatNumber(code.uses)); appendCell(tr,code.lastUsedAt?formatDateTime(code.lastUsedAt):"—"); appendCell(tr,code.expiresAt?formatDate(code.expiresAt):"No expiry"); appendPillCell(tr,code.active?"active":"disabled");
     const td=document.createElement("td");
     const actions=document.createElement("div");actions.className="row-actions";
+    const reset=document.createElement("button");reset.type="button";reset.className="button small";reset.textContent="Reset usage";reset.title="Restore this code's full weekly allowance without deleting activation history";reset.disabled=Number(code.weeklyUses||0)===0;reset.addEventListener("click",()=>resetWeeklyUsage(code,reset));
     const toggle=document.createElement("button");toggle.type="button";toggle.className=`button small ${code.active?"danger":""}`;toggle.textContent=code.active?"Disable":"Enable";toggle.addEventListener("click",()=>toggleCode(code,toggle));
     const del=document.createElement("button");del.type="button";del.className="button small danger";del.textContent="Delete";del.title="Delete access code and related history";del.addEventListener("click",()=>deleteCode(code,del));
-    actions.append(toggle,del);td.appendChild(actions);tr.appendChild(td);els.codesBody.appendChild(tr);
+    actions.append(reset,toggle,del);td.appendChild(actions);tr.appendChild(td);els.codesBody.appendChild(tr);
   });
 }
 
+async function openCodeUsageHistory(code,returnFocus){
+  const requestId=++codeUsageRequestId;
+  codeUsageReturnFocus=returnFocus||document.activeElement;
+  els.codeUsageTitle.textContent="Machine use history";
+  els.codeUsageCode.textContent=`${code.code} · ${code.siteName}`;
+  els.codeUsageSummary.textContent="Loading exact machine use history...";
+  els.codeUsageHistoryRows.innerHTML='<tr><td colspan="4" class="muted">Loading...</td></tr>';
+  els.codeUsageWeekRows.innerHTML='<tr><td colspan="5" class="muted">Loading...</td></tr>';
+  els.codeUsageHistoryNote.classList.add("hidden");
+  els.codeUsageHistoryNote.textContent="";
+  els.codeUsageOverlay.classList.remove("hidden");
+  setTimeout(()=>els.closeCodeUsageBtn.focus(),0);
+  try{
+    const data=await api("code_usage_history",{code:code.code});
+    if(requestId!==codeUsageRequestId)return;
+    renderCodeUsageHistory(code,data);
+  }catch(error){
+    if(requestId!==codeUsageRequestId)return;
+    els.codeUsageSummary.textContent=error.message;
+    els.codeUsageHistoryRows.innerHTML='<tr><td colspan="4" class="muted">History could not be loaded.</td></tr>';
+    els.codeUsageWeekRows.innerHTML='<tr><td colspan="5" class="muted">History could not be loaded.</td></tr>';
+  }
+}
+
+function renderCodeUsageHistory(code,data){
+  const history=Array.isArray(data.history)?data.history:[];
+  const weeks=Array.isArray(data.weeks)?data.weeks:[];
+  const totalUses=Number(code.uses||0);
+  els.codeUsageSummary.textContent=`${formatNumber(history.length)} detailed machine use ${history.length===1?"record":"records"} · ${formatNumber(totalUses)} total recorded ${totalUses===1?"activation":"activations"}`;
+  els.codeUsageHistoryRows.innerHTML="";
+  if(!history.length){
+    els.codeUsageHistoryRows.innerHTML='<tr><td colspan="4" class="muted">No machine-level records yet.</td></tr>';
+  }else{
+    history.forEach((item)=>{
+      const tr=document.createElement("tr");
+      appendCell(tr,formatDateTime(item.recordedAt));
+      appendCell(tr,item.machineName||item.machineId||"Unknown machine");
+      appendCell(tr,titleCase(item.machineType||"machine"));
+      appendCell(tr,item.cycleLabel||item.cycleKey||"—");
+      els.codeUsageHistoryRows.appendChild(tr);
+    });
+  }
+  const missingDetail=Math.max(0,totalUses-history.length);
+  if(missingDetail>0){
+    els.codeUsageHistoryNote.textContent=`${formatNumber(missingDetail)} earlier ${missingDetail===1?"activation has":"activations have"} weekly totals only. Exact machine and cycle details are recorded for new uses from now on.`;
+    els.codeUsageHistoryNote.classList.remove("hidden");
+  }
+  els.codeUsageWeekRows.innerHTML="";
+  if(!weeks.length){
+    els.codeUsageWeekRows.innerHTML='<tr><td colspan="5" class="muted">No weekly usage recorded.</td></tr>';
+  }else{
+    weeks.forEach((week)=>{
+      const tr=document.createElement("tr");
+      appendCell(tr,formatDate(week.weekStart));
+      appendCell(tr,formatNumber(week.recordedUses));
+      appendCell(tr,formatNumber(week.allowanceUses));
+      appendCell(tr,formatNumber(week.resetCount));
+      appendCell(tr,`${formatDateTime(week.firstUsedAt)} / ${formatDateTime(week.lastUsedAt)}`);
+      els.codeUsageWeekRows.appendChild(tr);
+    });
+  }
+}
+
+function closeCodeUsageHistory(){
+  codeUsageRequestId+=1;
+  els.codeUsageOverlay.classList.add("hidden");
+  const focusTarget=codeUsageReturnFocus;
+  codeUsageReturnFocus=null;
+  if(focusTarget?.isConnected)setTimeout(()=>focusTarget.focus(),0);
+}
+
 async function toggleCode(code,button){button.disabled=true;try{await api("set_code_active",{code:code.code,active:!code.active});await loadCodes();}catch(error){alert(error.message);}finally{button.disabled=false;}}
+
+async function resetWeeklyUsage(code,button){
+  const weeklyUses=Number(code.weeklyUses||0);
+  if(weeklyUses===0)return;
+  if(!confirm(`Reset this week's usage for ${code.code} from ${formatNumber(weeklyUses)} to 0? Their activation history will be kept.`))return;
+  button.disabled=true;button.textContent="Resetting…";
+  try{await api("reset_code_weekly_usage",{code:code.code});await loadCodes();}
+  catch(error){alert(error.message);button.disabled=false;button.textContent="Reset usage";}
+}
 
 async function deleteCode(code,button){
   const uses=Number(code.uses||0);
@@ -2610,6 +2697,9 @@ els.closePromoEditBtn.addEventListener("click",closePromoEditor);
 els.cancelPromoEditBtn.addEventListener("click",closePromoEditor);
 els.savePromoEditBtn.addEventListener("click",savePromo);
 els.promoEditOverlay.addEventListener("click",(event)=>{if(event.target===els.promoEditOverlay)closePromoEditor();});
+els.closeCodeUsageBtn.addEventListener("click",closeCodeUsageHistory);
+els.dismissCodeUsageBtn.addEventListener("click",closeCodeUsageHistory);
+els.codeUsageOverlay.addEventListener("click",(event)=>{if(event.target===els.codeUsageOverlay)closeCodeUsageHistory();});
 els.promoEditDiscountValue.addEventListener("keydown",(event)=>{if(event.key==="Enter"){event.preventDefault();savePromo();}});
 els.promoFilter.addEventListener("input",()=>{els.promoFilter.value=sanitizePromoInput(els.promoFilter.value);clearTimeout(promoFilterTimer);promoFilterTimer=setTimeout(loadPromoCodes,260);});
 els.freeTrialEnabledInput.addEventListener("change",saveFreeTrialEnabled);
@@ -2625,7 +2715,7 @@ document.querySelectorAll("[data-support-filter]").forEach(button=>button.addEve
 els.supportSearch?.addEventListener("input",()=>{clearTimeout(supportSearchTimer);supportSearchTimer=setTimeout(loadSupport,220);});
 document.querySelector(".dashboard-trend")?.addEventListener("toggle",(event)=>{if(event.currentTarget.open&&dashboardData)requestAnimationFrame(()=>drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP"));});
 window.addEventListener("hashchange",()=>{const tab=location.hash.replace(/^#/,"");if(adminCode&&tab&&tab!==activeTab&&$(`tab-${tab}`))openTab(tab);});
-window.addEventListener("keydown",(event)=>{if(event.key!=="Escape")return;if(!els.promoEditOverlay.classList.contains("hidden"))closePromoEditor();else closeControlDrawer();});
+window.addEventListener("keydown",(event)=>{if(event.key!=="Escape")return;if(!els.codeUsageOverlay.classList.contains("hidden"))closeCodeUsageHistory();else if(!els.promoEditOverlay.classList.contains("hidden"))closePromoEditor();else closeControlDrawer();});
 window.addEventListener("resize",()=>{
   if(dashboardData&&!$("tab-dashboard").classList.contains("hidden"))drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP");
   if(growthChartState.points.length&&!$("tab-analytics").classList.contains("hidden")&&paidAnalyticsView==="growth")drawGrowthHistoryChart();

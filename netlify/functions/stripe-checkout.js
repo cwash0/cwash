@@ -670,7 +670,7 @@ async function getActivationUpgradeUsage(accessCode, db = pool) {
   const usageResult = await db.query(
     `
       select
-        coalesce((select login_count from code_usage_weekly where code = $1 and week_start = $2::date), 0)::int as used,
+        coalesce((select greatest(login_count - coalesce(reset_count, 0), 0) from code_usage_weekly where code = $1 and week_start = $2::date), 0)::int as used,
         coalesce((
           select sum(bonus_activations)
           from activation_upgrade_orders
@@ -1267,6 +1267,7 @@ async function ensurePaymentTable() {
       primary key (code, week_start)
     )
   `);
+  await pool.query(`alter table code_usage_weekly add column if not exists reset_count integer not null default 0`);
   await pool.query(`
     create table if not exists activation_upgrade_orders (
       order_id text primary key,

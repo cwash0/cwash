@@ -2,6 +2,22 @@
   "name": "laundry-controller",
   "private": true,
   "version": "1.0.0",
+  "scripts": {
+    "dev": "node preview/local-preview.js",
+    "preview": "node preview/local-preview.js",
+    "preview:full": "node preview/local-preview.js",
+    "ngrok": "node preview/ngrok-tunnel.js",
+    "preview:tunnel": "node preview/ngrok-tunnel.js",
+    "preview:pay:safe": "node scripts/preview-pay.js",
+    "test:analytics-scale": "node scripts/test-analytics-scale.js",
+    "test:funnel": "node scripts/test-trial-funnel.js",
+    "test:coverage": "node scripts/test-city-coverage.js",
+    "test:support": "node scripts/test-support-tickets.js",
+    "test:orders": "node scripts/test-order-storage.js",
+    "test:site-selector": "node scripts/test-site-selector.js",
+    "test:database": "node scripts/test-database-config.js",
+    "test": "npm run test:database && npm run test:funnel && npm run test:analytics-scale && npm run test:coverage && npm run test:support && npm run test:orders && npm run test:site-selector"
+  },
   "dependencies": {
     "pg": "^8.12.0"
   }

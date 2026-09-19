@@ -210,6 +210,9 @@ th:first-child, td:first-child { padding-left: 11px; }
 .sort-button.active::after { content: "↓"; opacity: 1; color: var(--accent); }
 .sort-button.active.asc::after { content: "↑"; }
 .row-actions { flex-wrap: nowrap; }
+.codes-table tbody tr.code-row { cursor: pointer; }
+.codes-table tbody tr.code-row:focus-visible { outline: 2px solid rgba(23,107,99,.35); outline-offset: -2px; }
+.codes-table tbody tr.code-row:focus-visible td, .codes-table tbody tr.code-row:hover td { background: var(--accent-soft); }
 .pill { display: inline-flex; align-items: center; padding: 3px 7px; border-radius: 12px; background: #edf1f4; color: #536270; font-size: .62rem; font-weight: 750; text-transform: capitalize; }
 .pill.active, .pill.completed, .pill.sent, .pill.yes, .pill.open, .pill.shipped { background: var(--success-soft); color: var(--success); }
 .pill.disabled, .pill.inactive, .pill.failed, .pill.no, .pill.cancelled { background: var(--danger-soft); color: var(--danger); }
@@ -469,9 +472,18 @@ button.ramp-row:hover { background: var(--surface-2); }
 .drawer-stat span { font-size: .62rem; }
 /* Modal */
 .modal-overlay { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 20px; background: rgba(11,22,31,.52); }
+#codeUsageOverlay { background: rgba(231,238,242,.84); backdrop-filter: blur(3px); }
 .modal-card { width: min(540px, 100%); max-height: 90vh; overflow: auto; padding: 20px; border-radius: 9px; background: #fff; box-shadow: var(--shadow); }
 .modal-head { display: flex; justify-content: space-between; gap: 15px; padding-bottom: 14px; margin-bottom: 15px; border-bottom: 1px solid var(--line); }
 .modal-actions { justify-content: flex-end; padding-top: 16px; }
+.code-usage-card { width: min(820px, 100%); }
+.code-usage-summary { padding: 10px 12px; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); color: var(--ink); font-size: .72rem; }
+.code-usage-section { display: grid; gap: 9px; }
+.code-usage-section .section-heading { margin-bottom: 0; }
+.code-usage-section .table-wrap { max-height: 390px; }
+.code-usage-note { padding: 9px 11px; border-left: 3px solid #c87928; background: #fff8ee; color: #72512c; font-size: .68rem; }
+.code-weekly-history { margin-top: 14px; }
+.code-weekly-history .table-wrap { max-height: 260px; padding: 0 12px 12px; }
 
 /* Customer email control */
 .email-view { display: grid; gap: 16px; }

@@ -107,8 +107,10 @@ exports.handler = async (event) => {
     if (action === "search_sites") return json({ ok: true, sites: searchSites(body) });
     if (action === "create_code") return json({ ok: true, ...(await createAccessCode(body)) }, 201);
     if (action === "list_codes") return json({ ok: true, codes: await listAccessCodes(body) });
+    if (action === "code_usage_history") return json({ ok: true, ...(await getCodeUsageHistory(body)) });
     if (action === "set_code_active") return json({ ok: true, ...(await setCodeActive(body)) });
     if (action === "set_code_weekly_limit") return json({ ok: true, ...(await setCodeWeeklyLimit(body)) });
+    if (action === "reset_code_weekly_usage") return json({ ok: true, ...(await resetCodeWeeklyUsage(body)) });
     if (action === "delete_code") return json({ ok: true, ...(await deleteAccessCode(body)) });
     if (action === "create_promo") return json({ ok: true, ...(await createPromoCode(body)) }, 201);
     if (action === "list_promos") return json({ ok: true, promos: await listPromoCodes(body) });
@@ -375,6 +377,20 @@ async function ensureSchema() {
     set expires_at = created_at + interval '1 year'
     where expires_at is null and source = 'payment'
   `);
+  await pool.query(`
+    create table if not exists code_activation_history (
+      id bigserial primary key,
+      code text not null references access_codes(code) on delete cascade,
+      site_id text not null,
+      machine_id text not null,
+      machine_name text not null,
+      machine_type text,
+      cycle_key text not null,
+      cycle_label text not null,
+      recorded_at timestamptz not null default now()
+    )
+  `);
+  await pool.query(`create index if not exists code_activation_history_code_recorded_idx on code_activation_history(code, recorded_at desc)`);
 
   const ordersExist = await tableExists("access_orders");
   if (ordersExist) {
@@ -484,6 +500,7 @@ async function ensureSchema() {
   `);
   await pool.query(`create index if not exists site_interest_hits_bot_created_idx on site_interest_hits(created_at desc) where is_bot = true`);
   if (await tableExists("code_usage_weekly")) {
+    await pool.query(`alter table code_usage_weekly add column if not exists reset_count integer not null default 0`);
     await pool.query(`create index if not exists code_usage_weekly_week_idx on code_usage_weekly(week_start desc)`);
   }
 
@@ -1423,7 +1440,7 @@ async function listAccessCodes(body = {}) {
     `
     : "";
   const usageFields = usageExists
-    ? "coalesce(u.uses,0) as uses, u.last_used_at, coalesce(cw.login_count,0)::int as weekly_uses"
+    ? "coalesce(u.uses,0) as uses, u.last_used_at, greatest(coalesce(cw.login_count,0) - coalesce(cw.reset_count,0), 0)::int as weekly_uses"
     : "0 as uses, null::timestamptz as last_used_at, 0::int as weekly_uses";
   const { rows } = await pool.query(
     `
@@ -1439,6 +1456,67 @@ async function listAccessCodes(body = {}) {
   );
   const siteMap = new Map(getPublicSites().map((site) => [site.id, site]));
   return rows.map((row) => mapCode(row, siteMap.get(row.site_id)));
+}
+
+async function getCodeUsageHistory(body = {}) {
+  const code = String(body.code || "").trim();
+  if (!code) throw new AdminError("Missing code.", 400, "missing_code");
+
+  const accessResult = await pool.query(
+    `select code, site_id from access_codes where code = $1 and deleted_at is null limit 1`,
+    [code]
+  );
+  if (!accessResult.rows[0]) throw new AdminError("Code not found.", 404, "code_not_found");
+
+  const [historyResult, weeklyResult] = await Promise.all([
+    pool.query(
+      `
+        select id, site_id, machine_id, machine_name, machine_type,
+               cycle_key, cycle_label, recorded_at
+        from code_activation_history
+        where code = $1
+        order by recorded_at desc, id desc
+      `,
+      [code]
+    ),
+    tableExists("code_usage_weekly").then((exists) => exists
+      ? pool.query(
+          `
+            select week_start, login_count,
+                   greatest(login_count - coalesce(reset_count, 0), 0)::int as allowance_uses,
+                   coalesce(reset_count, 0)::int as reset_count,
+                   first_used_at, last_used_at
+            from code_usage_weekly
+            where code = $1
+            order by week_start desc
+            limit 260
+          `,
+          [code]
+        )
+      : { rows: [] })
+  ]);
+
+  return {
+    code,
+    history: historyResult.rows.map((row) => ({
+      id: number(row.id),
+      siteId: row.site_id,
+      machineId: row.machine_id,
+      machineName: row.machine_name,
+      machineType: row.machine_type || "",
+      cycleKey: row.cycle_key,
+      cycleLabel: row.cycle_label,
+      recordedAt: row.recorded_at
+    })),
+    weeks: weeklyResult.rows.map((row) => ({
+      weekStart: row.week_start,
+      recordedUses: number(row.login_count),
+      allowanceUses: number(row.allowance_uses),
+      resetCount: number(row.reset_count),
+      firstUsedAt: row.first_used_at || null,
+      lastUsedAt: row.last_used_at || null
+    }))
+  };
 }
 
 async function setCodeActive(body) {
@@ -1471,6 +1549,29 @@ async function setCodeWeeklyLimit(body) {
   if (!result.rows[0]) throw new AdminError("Code not found.", 404, "code_not_found");
   const site = getPublicSites().find((entry) => entry.id === result.rows[0].site_id);
   return { code: mapCode(result.rows[0], site) };
+}
+
+async function resetCodeWeeklyUsage(body) {
+  const code = String(body.code || "").trim();
+  if (!code) throw new AdminError("Missing code.", 400, "missing_code");
+
+  const accessResult = await pool.query(
+    `select code from access_codes where code = $1 and deleted_at is null limit 1`,
+    [code]
+  );
+  if (!accessResult.rows[0]) throw new AdminError("Code not found.", 404, "code_not_found");
+  if (!(await tableExists("code_usage_weekly"))) return { code, weeklyUses: 0 };
+
+  await pool.query(
+    `
+      update code_usage_weekly
+      set reset_count = login_count
+      where code = $1
+        and week_start = date_trunc('week', now() at time zone 'UTC')::date
+    `,
+    [code]
+  );
+  return { code, weeklyUses: 0 };
 }
 
 async function deleteAccessCode(body = {}) {
@@ -2360,7 +2461,11 @@ async function ensureUsageSchemaForFeedbackTest() {
       primary key (code, week_start)
     )
   `);
-  await pool.query(`alter table code_usage_weekly add column if not exists first_used_at timestamptz`);
+  await pool.query(`
+    alter table code_usage_weekly
+      add column if not exists first_used_at timestamptz,
+      add column if not exists reset_count integer not null default 0
+  `);
 }
 
 async function currentUtcWeekStart() {
@@ -2667,7 +2772,7 @@ async function getSupportCustomerContext(ticket) {
       `
         select coalesce(sum(login_count), 0)::int as total_used,
                coalesce(max(last_used_at), max(first_used_at)) as last_used_at,
-               coalesce(sum(login_count) filter (
+               coalesce(sum(greatest(login_count - coalesce(reset_count, 0), 0)) filter (
                  where week_start = date_trunc('week', now() at time zone 'UTC')::date
                ), 0)::int as weekly_used
         from code_usage_weekly

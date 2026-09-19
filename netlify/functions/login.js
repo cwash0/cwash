@@ -356,8 +356,23 @@ async function ensureUsageSchema() {
   `);
   await pool.query(`
     alter table code_usage_weekly
-      add column if not exists first_used_at timestamptz
+      add column if not exists first_used_at timestamptz,
+      add column if not exists reset_count integer not null default 0
   `);
+  await pool.query(`
+    create table if not exists code_activation_history (
+      id bigserial primary key,
+      code text not null references access_codes(code) on delete cascade,
+      site_id text not null,
+      machine_id text not null,
+      machine_name text not null,
+      machine_type text,
+      cycle_key text not null,
+      cycle_label text not null,
+      recorded_at timestamptz not null default now()
+    )
+  `);
+  await pool.query(`create index if not exists code_activation_history_code_recorded_idx on code_activation_history(code, recorded_at desc)`);
   await pool.query(`
     create table if not exists activation_upgrade_orders (
       order_id text primary key,
@@ -385,14 +400,14 @@ function getNextWeekStartUTC(date = new Date()) {
   return current.toISOString();
 }
 
-async function getWeeklyUsage(code, weeklyLimit, maxTotalUses = null) {
+async function getWeeklyUsage(code, weeklyLimit, maxTotalUses = null, db = pool) {
   const weekStart = getWeekStartUTC();
-  const bonus = await getActivationUpgradeBonus(code, weekStart);
-  const { rows } = await pool.query(
+  const bonus = await getActivationUpgradeBonus(code, weekStart, db);
+  const { rows } = await db.query(
     `
       select
         coalesce(sum(login_count), 0)::int as total_uses,
-        coalesce(sum(login_count) filter (where week_start = $2::date), 0)::int as weekly_uses,
+        coalesce(sum(greatest(login_count - coalesce(reset_count, 0), 0)) filter (where week_start = $2::date), 0)::int as weekly_uses,
         max(last_used_at) as last_used_at
       from code_usage_weekly
       where code = $1
@@ -419,19 +434,19 @@ async function getWeeklyUsage(code, weeklyLimit, maxTotalUses = null) {
   };
 }
 
-async function consumeWeeklyUsage(code, weeklyLimit, maxTotalUses = null, deleteAfterUse = false) {
+async function consumeWeeklyUsage(code, weeklyLimit, maxTotalUses = null, deleteAfterUse = false, db = pool) {
   const weekStart = getWeekStartUTC();
   const baseLimit = Number.isInteger(Number(weeklyLimit)) && Number(weeklyLimit) > 0 ? Number(weeklyLimit) : 4;
-  const bonus = await getActivationUpgradeBonus(code, weekStart);
+  const bonus = await getActivationUpgradeBonus(code, weekStart, db);
   const limit = baseLimit + bonus;
   const totalLimit = Number.isInteger(Number(maxTotalUses)) && Number(maxTotalUses) > 0
     ? Number(maxTotalUses)
     : (deleteAfterUse ? 1 : null);
   if (totalLimit) {
-    const current = await getWeeklyUsage(code, baseLimit, totalLimit);
+    const current = await getWeeklyUsage(code, baseLimit, totalLimit, db);
     if (Number(current.totalUsed || 0) >= totalLimit) return { allowed: false, ...current };
   }
-  const { rows } = await pool.query(
+  const { rows } = await db.query(
     `
       insert into code_usage_weekly (code, week_start, login_count, first_used_at, last_used_at)
       values ($1, $2::date, 1, now(), now())
@@ -440,19 +455,18 @@ async function consumeWeeklyUsage(code, weeklyLimit, maxTotalUses = null, delete
         first_used_at = coalesce(code_usage_weekly.first_used_at, code_usage_weekly.last_used_at, now()),
         login_count = code_usage_weekly.login_count + 1,
         last_used_at = now()
-      where code_usage_weekly.login_count < $3
+      where greatest(code_usage_weekly.login_count - coalesce(code_usage_weekly.reset_count, 0), 0) < $3
       returning login_count, last_used_at
     `,
     [code, weekStart, limit]
   );
   if (!rows[0]) {
-    const usage = await getWeeklyUsage(code, baseLimit, totalLimit);
+    const usage = await getWeeklyUsage(code, baseLimit, totalLimit, db);
     return { allowed: false, ...usage };
   }
-  const used = Number(rows[0].login_count || 0);
-  const usage = await getWeeklyUsage(code, baseLimit, totalLimit);
+  const usage = await getWeeklyUsage(code, baseLimit, totalLimit, db);
   if (deleteAfterUse && Number(usage.totalUsed || 0) >= Number(totalLimit || 1)) {
-    await pool.query(
+    await db.query(
       `update access_codes set active = false, deleted_at = coalesce(deleted_at, now()) where code = $1`,
       [code]
     );
@@ -460,7 +474,7 @@ async function consumeWeeklyUsage(code, weeklyLimit, maxTotalUses = null, delete
   return {
     allowed: true,
     ...usage,
-    used,
+    used: Number(usage.used || 0),
     limit,
     baseLimit,
     bonus,
@@ -469,8 +483,8 @@ async function consumeWeeklyUsage(code, weeklyLimit, maxTotalUses = null, delete
   };
 }
 
-async function getActivationUpgradeBonus(code, weekStart = getWeekStartUTC()) {
-  const { rows } = await pool.query(
+async function getActivationUpgradeBonus(code, weekStart = getWeekStartUTC(), db = pool) {
+  const { rows } = await db.query(
     `
       select coalesce(sum(bonus_activations), 0)::int as bonus
       from activation_upgrade_orders
@@ -481,6 +495,58 @@ async function getActivationUpgradeBonus(code, weekStart = getWeekStartUTC()) {
     [code, weekStart]
   );
   return Number(rows[0]?.bonus || 0);
+}
+
+async function consumeAndRecordActivation({
+  code,
+  siteId,
+  machine,
+  cycleKey,
+  weeklyLimit,
+  maxTotalUses = null,
+  deleteAfterUse = false
+}) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const usage = await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, deleteAfterUse, client);
+    if (usage.allowed !== false) {
+      await recordActivationHistory(client, { code, siteId, machine, cycleKey });
+    }
+    await client.query("commit");
+    return usage;
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function recordActivationHistory(db, { code, siteId, machine, cycleKey }) {
+  const key = String(cycleKey || "").trim();
+  const cycle = getMachineCycles(machine)[key];
+  const cycleLabel = typeof cycle === "string"
+    ? cycle
+    : String(cycle?.label || key || "Cycle").trim();
+  const result = await db.query(
+    `
+      insert into code_activation_history
+        (code, site_id, machine_id, machine_name, machine_type, cycle_key, cycle_label, recorded_at)
+      values ($1, $2, $3, $4, $5, $6, $7, now())
+      returning id, recorded_at
+    `,
+    [
+      code,
+      siteId,
+      getMachineKey(machine),
+      String(machine?.name || getMachineKey(machine)),
+      String(machine?.type || ""),
+      key,
+      cycleLabel || key
+    ]
+  );
+  return result.rows[0] || null;
 }
 
 function isExpired(mapping) {
@@ -638,7 +704,21 @@ exports.handler = async (event) => {
         const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses);
         return json({ ok: true, ...usage, deleteAfterUse }, 200);
       }
-      const usage = await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, deleteAfterUse);
+      const entry = loadSiteMap()[mapping.site_id];
+      const machineId = String(body.machineId || "").trim();
+      const cycleKey = String(body.cycleKey || "").trim();
+      const machine = entry && machineId ? findMachineForActivation(entry.machines, machineId) : null;
+      const usage = machine && getActivateCommand(machine, cycleKey)
+        ? await consumeAndRecordActivation({
+            code,
+            siteId: mapping.site_id,
+            machine,
+            cycleKey,
+            weeklyLimit,
+            maxTotalUses,
+            deleteAfterUse
+          })
+        : await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, deleteAfterUse);
       if (!usage.allowed) {
         return json({ ok: false, error: "weekly_limit_reached", ...usage, deleteAfterUse }, 429);
       }
@@ -665,7 +745,15 @@ exports.handler = async (event) => {
 
       const usage = deleteAfterUse
         ? await getWeeklyUsage(code, weeklyLimit, maxTotalUses || 1)
-        : await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, false);
+        : await consumeAndRecordActivation({
+            code,
+            siteId: mapping.site_id,
+            machine,
+            cycleKey,
+            weeklyLimit,
+            maxTotalUses,
+            deleteAfterUse: false
+          });
       if (usage.allowed === false) {
         return json({ ok: false, error: "weekly_limit_reached", ...usage }, 429);
       }
