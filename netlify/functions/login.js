@@ -374,6 +374,21 @@ async function ensureUsageSchema() {
   `);
   await pool.query(`create index if not exists code_activation_history_code_recorded_idx on code_activation_history(code, recorded_at desc)`);
   await pool.query(`
+    create table if not exists code_activation_attempts (
+      activation_id text primary key,
+      code text not null references access_codes(code) on delete cascade,
+      site_id text not null,
+      machine_id text not null,
+      cycle_key text not null,
+      status text not null default 'pending',
+      prepared_at timestamptz not null default now(),
+      completed_at timestamptz,
+      cancelled_at timestamptz,
+      cancel_reason text
+    )
+  `);
+  await pool.query(`create index if not exists code_activation_attempts_code_prepared_idx on code_activation_attempts(code, prepared_at desc)`);
+  await pool.query(`
     create table if not exists activation_upgrade_orders (
       order_id text primary key,
       stripe_session_id text unique,
@@ -549,6 +564,99 @@ async function recordActivationHistory(db, { code, siteId, machine, cycleKey }) 
   return result.rows[0] || null;
 }
 
+async function createActivationAttempt({ code, siteId, machine, cycleKey }) {
+  const activationId = crypto.randomUUID();
+  await pool.query(
+    `
+      insert into code_activation_attempts
+        (activation_id, code, site_id, machine_id, cycle_key, status, prepared_at)
+      values ($1, $2, $3, $4, $5, 'pending', now())
+    `,
+    [activationId, code, siteId, getMachineKey(machine), String(cycleKey || "").trim()]
+  );
+  return activationId;
+}
+
+async function cancelActivationAttempt({ activationId, code, reason }) {
+  const result = await pool.query(
+    `
+      update code_activation_attempts
+      set status = 'cancelled', cancelled_at = now(), cancel_reason = $3
+      where activation_id = $1 and code = $2 and status = 'pending'
+      returning activation_id
+    `,
+    [activationId, code, String(reason || "unconfirmed").slice(0, 120)]
+  );
+  return Boolean(result.rows[0]);
+}
+
+async function completeActivationAttempt({
+  activationId,
+  code,
+  weeklyLimit,
+  maxTotalUses,
+  deleteAfterUse
+}) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const attemptResult = await client.query(
+      `
+        select activation_id, site_id, machine_id, cycle_key, status
+        from code_activation_attempts
+        where activation_id = $1 and code = $2
+        limit 1
+        for update
+      `,
+      [activationId, code]
+    );
+    const attempt = attemptResult.rows[0];
+    if (!attempt) {
+      await client.query("rollback");
+      return { error: "activation_not_found", statusCode: 404 };
+    }
+    if (attempt.status === "completed") {
+      const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null), client);
+      await client.query("commit");
+      return { ...usage, allowed: true, activationId, alreadyCompleted: true };
+    }
+    if (attempt.status !== "pending") {
+      await client.query("rollback");
+      return { error: "activation_not_pending", statusCode: 409 };
+    }
+
+    const entry = loadSiteMap()[attempt.site_id];
+    const machine = entry ? findMachineForActivation(entry.machines, attempt.machine_id) : null;
+    if (!machine || !getActivateCommand(machine, attempt.cycle_key)) {
+      await client.query("rollback");
+      return { error: "invalid_machine_or_cycle", statusCode: 400 };
+    }
+
+    const usage = await consumeWeeklyUsage(code, weeklyLimit, maxTotalUses, deleteAfterUse, client);
+    if (usage.allowed === false) {
+      await client.query("rollback");
+      return { error: "weekly_limit_reached", statusCode: 429, ...usage };
+    }
+    await recordActivationHistory(client, {
+      code,
+      siteId: attempt.site_id,
+      machine,
+      cycleKey: attempt.cycle_key
+    });
+    await client.query(
+      `update code_activation_attempts set status = 'completed', completed_at = now() where activation_id = $1`,
+      [activationId]
+    );
+    await client.query("commit");
+    return { ...usage, allowed: true, activationId, alreadyCompleted: false };
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function isExpired(mapping) {
   if (!mapping?.expires_at) return false;
   const expiry = new Date(mapping.expires_at);
@@ -564,6 +672,22 @@ async function findAccessCode(code) {
     limit 1
   `;
   const { rows } = await pool.query(query, [code]);
+  return rows[0] || null;
+}
+
+async function findAccessCodeForCompletedAttempt(code, activationId) {
+  if (!activationId) return null;
+  const { rows } = await pool.query(
+    `
+      select ac.code, ac.site_id, ac.active, ac.weekly_limit, ac.max_total_uses,
+             ac.delete_after_use, ac.expires_at
+      from access_codes ac
+      join code_activation_attempts caa on caa.code = ac.code
+      where ac.code = $1 and caa.activation_id = $2 and caa.status = 'completed'
+      limit 1
+    `,
+    [code, activationId]
+  );
   return rows[0] || null;
 }
 
@@ -646,11 +770,16 @@ exports.handler = async (event) => {
     }
 
     await ensureUsageSchema();
-    const mapping = await findAccessCode(code);
-    if (!mapping || mapping.active !== true) {
+    const completionActivationId = action === "complete_activation" ? String(body.activationId || "").trim() : "";
+    let mapping = await findAccessCode(code);
+    const completedAttemptRetry = (!mapping || mapping.active !== true) && completionActivationId
+      ? await findAccessCodeForCompletedAttempt(code, completionActivationId)
+      : null;
+    if (completedAttemptRetry) mapping = completedAttemptRetry;
+    if (!mapping || (mapping.active !== true && !completedAttemptRetry)) {
       return json({ ok: false, error: "unknown_code" }, 404);
     }
-    if (isExpired(mapping)) {
+    if (!completedAttemptRetry && isExpired(mapping)) {
       return json({ ok: false, error: "expired_code", expiresAt: mapping.expires_at }, 410);
     }
 
@@ -699,7 +828,27 @@ exports.handler = async (event) => {
       return json({ ok: true, ...usage }, 200);
     }
 
+    if (action === "cancel_activation") {
+      const activationId = String(body.activationId || "").trim();
+      if (!activationId) return json({ ok: false, error: "missing_activation_id" }, 400);
+      await cancelActivationAttempt({ activationId, code, reason: body.reason });
+      const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null));
+      return json({ ok: true, ...usage, deleteAfterUse }, 200);
+    }
+
     if (action === "complete_activation") {
+      const activationId = String(body.activationId || "").trim();
+      if (activationId) {
+        const result = await completeActivationAttempt({
+          activationId,
+          code,
+          weeklyLimit,
+          maxTotalUses,
+          deleteAfterUse
+        });
+        if (result.error) return json({ ok: false, ...result, deleteAfterUse }, result.statusCode || 400);
+        return json({ ok: true, ...result, deleteAfterUse }, 200);
+      }
       if (!deleteAfterUse) {
         const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses);
         return json({ ok: true, ...usage, deleteAfterUse }, 200);
@@ -743,8 +892,9 @@ exports.handler = async (event) => {
         return json({ ok: false, error: "invalid_machine_or_cycle" }, 400);
       }
 
-      const usage = deleteAfterUse
-        ? await getWeeklyUsage(code, weeklyLimit, maxTotalUses || 1)
+      const deferredUsage = body.deferUsage === true;
+      const usage = deferredUsage || deleteAfterUse
+        ? await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null))
         : await consumeAndRecordActivation({
             code,
             siteId: mapping.site_id,
@@ -760,9 +910,22 @@ exports.handler = async (event) => {
       if (deleteAfterUse && Number(usage.remaining || 0) <= 0) {
         return json({ ok: false, error: "weekly_limit_reached", ...usage, deleteAfterUse }, 429);
       }
+      if (deferredUsage && Number(usage.remaining || 0) <= 0) {
+        return json({ ok: false, error: "weekly_limit_reached", ...usage, deleteAfterUse }, 429);
+      }
+
+      const activationId = deferredUsage
+        ? await createActivationAttempt({
+            code,
+            siteId: mapping.site_id,
+            machine,
+            cycleKey
+          })
+        : "";
 
       return json({
         ok: true,
+        activationId,
         machineId: getMachineKey(machine),
         cycleKey,
         activationCommand,

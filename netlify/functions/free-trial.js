@@ -51,6 +51,7 @@ exports.handler = async (event) => {
     if (action === "change_site") return json({ ok: true, ...(await changeTrialSite(body)) });
     if (action === "prepare_activation") return json({ ok: true, ...(await prepareTrialActivation(body)) });
     if (action === "complete_activation") return json({ ok: true, ...(await completeTrialActivation(body)) });
+    if (action === "cancel_activation") return json({ ok: true, ...(await cancelTrialActivation(body)) });
     return json({ ok: false, error: "unknown_action" }, 400);
   } catch (error) {
     if (error instanceof TrialError) {
@@ -353,6 +354,13 @@ async function prepareTrialActivation(body = {}) {
 
 async function completeTrialActivation(body = {}) {
   const tokenHash = validateTrialToken(body.trialToken);
+  const requestedActivationId = String(body.activationId || "").trim();
+  if (requestedActivationId) {
+    const pending = await findTrial(body.trialToken);
+    if (requestedActivationId !== activationIdForClaim(pending.id)) {
+      throw new TrialError("This activation could not be confirmed.", 404, "activation_not_found");
+    }
+  }
   const result = await pool.query(`
     update free_trial_claims
     set activated_at = now(), activation_status = 'accepted', updated_at = now()
@@ -365,6 +373,25 @@ async function completeTrialActivation(body = {}) {
   const existing = await findTrial(body.trialToken);
   if (existing.activated_at) return trialSessionPayload(existing);
   throw new TrialError("This free trial could not be completed.", 409, "trial_unavailable");
+}
+
+async function cancelTrialActivation(body = {}) {
+  const tokenHash = validateTrialToken(body.trialToken);
+  const claim = await findTrial(body.trialToken);
+  const requestedActivationId = String(body.activationId || "").trim();
+  if (!requestedActivationId || requestedActivationId !== activationIdForClaim(claim.id)) {
+    throw new TrialError("This activation could not be updated.", 404, "activation_not_found");
+  }
+  if (claim.activated_at) return trialSessionPayload(claim);
+  const result = await pool.query(`
+    update free_trial_claims
+    set activation_status = 'unconfirmed', updated_at = now()
+    where id = $1 and trial_token_hash = $2 and activated_at is null
+    returning id, site_id, customer_email, created_at, activated_at,
+              activation_machine_id, activation_cycle_key, activation_status, activation_prepared_at
+  `, [claim.id, tokenHash]);
+  if (!result.rows.length) throw new TrialError("This activation could not be updated.", 409, "trial_unavailable");
+  return trialSessionPayload(result.rows[0]);
 }
 
 async function findTrial(rawToken) {

@@ -1370,6 +1370,7 @@ function bluetoothStageLabel(stage) {
     coin_disable: "Coin control",
     activation_ack: "Activation acknowledgement",
     execution_ack: "Execution acknowledgement",
+    confirmation: "Start confirmation",
     connected: "Connected / idle"
   };
   return labels[String(stage || "").toLowerCase()] || titleCase(stage || "unknown");

@@ -54,6 +54,13 @@ const CMD = {
   EXEC: "[EXEC]",
 };
 
+const ACK = {
+  HANDSHAKE: "[ACK:HANDSHAKE]",
+  ACTIVATE: "[ACK:ACTIVATE]",
+  EXEC: "[ACK:EXEC]",
+};
+const START_CONFIRMATION_DELAYS_MS = [600, 1000, 1500, 2200, 3000];
+
 function mountUpgradePaymentSheet() {
   const host = document.getElementById("upgradePaymentHost");
   host.innerHTML = `
@@ -1640,23 +1647,49 @@ function onNotify(event) {
 async function writeAscii(text) {
   if (!txChar) throw new Error("TX characteristic not ready");
   const bytes = enc.encode(text);
+  if (txChar.properties?.write) {
+    if (typeof txChar.writeValueWithResponse === "function") {
+      await txChar.writeValueWithResponse(bytes);
+      return;
+    }
+    await txChar.writeValue(bytes);
+    return;
+  }
   try { await txChar.writeValueWithoutResponse(bytes); }
   catch { await txChar.writeValue(bytes); }
 }
 
-async function sendAndWatchForError(text, waitMs) {
+async function sendAndObserve(text, expectedAck, waitMs) {
   notificationText = "";
   await writeAscii(text);
   await new Promise((resolve) => setTimeout(resolve, waitMs));
 
   const response = notificationText;
   notificationText = "";
-  if (!response.toUpperCase().includes("ERROR")) return;
+  const normalized = response.toUpperCase();
+  if (!normalized.includes("ERROR")) {
+    return {
+      acknowledged: Boolean(expectedAck) && normalized.includes(String(expectedAck).toUpperCase()),
+      response
+    };
+  }
 
   const error = new Error(`Machine reported ${response.trim() || "ERROR"}`);
   error.code = "machine_error";
   error.response = response;
   throw error;
+}
+
+async function sendHandshakeWithRetry() {
+  let observation = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1200);
+  if (observation.acknowledged || !isConnected()) return observation;
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const retry = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1500);
+  return {
+    acknowledged: retry.acknowledged,
+    response: [observation.response, retry.response].filter(Boolean).join("\n"),
+    attempts: 2
+  };
 }
 
 async function enableRxNotifications() {
@@ -1716,7 +1749,8 @@ async function requestActivationCommand(machine, cycleKey) {
       action: "prepare_activation",
       code: activeAccessCode,
       machineId: getMachineKey(machine),
-      cycleKey
+      cycleKey,
+      deferUsage: true
     })
   });
   const data = await res.json().catch(() => ({}));
@@ -1744,11 +1778,14 @@ async function requestActivationCommand(machine, cycleKey) {
   }
 
   updateWeeklyUsageFromData(data);
-  return String(data.activationCommand);
+  return {
+    command: String(data.activationCommand),
+    activationId: String(data.activationId || "")
+  };
 }
 
-async function completeTrialActivationIfNeeded(machine, cycleKey) {
-  if (!activeAccessCode || !isFreeTrialCode()) return;
+async function completeConfirmedActivation(activationId, machine, cycleKey) {
+  if (!activeAccessCode || !activationId) return;
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -1759,6 +1796,7 @@ async function completeTrialActivationIfNeeded(machine, cycleKey) {
         body: JSON.stringify({
           action: "complete_activation",
           code: activeAccessCode,
+          activationId,
           machineId: getMachineKey(machine),
           cycleKey
         })
@@ -1771,33 +1809,77 @@ async function completeTrialActivationIfNeeded(machine, cycleKey) {
       lastError = error;
     }
   }
-  console.error("Could not complete free trial activation", lastError);
+  throw lastError || new Error("Activation completion failed");
+}
+
+async function cancelPreparedActivation(activationId, reason = "unconfirmed") {
+  if (!activeAccessCode || !activationId) return;
+  try {
+    const res = await fetch("/.netlify/functions/login", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "cancel_activation", code: activeAccessCode, activationId, reason })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok !== false) updateWeeklyUsageFromData(data);
+  } catch (_) {}
 }
 
 async function runSequence(machine, cycleKey) {
   let stage = "rx_notifications";
+  let activationId = "";
   unexpectedBluetoothDisconnectReported = false;
+  clearTimeout(cycleCooldownTimer);
+  for (const button of dynamicButtons) button.disabled = true;
   try {
     bluetoothFailureStage = stage;
     resetRx();
     await enableRxNotifications();
+    stage = "handshake";
+    bluetoothFailureStage = stage;
+    const handshake = await sendHandshakeWithRetry();
     setActivity("Authorising start", "Preparing secure command", "warn");
     stage = "authorization";
     bluetoothFailureStage = stage;
-    let activateCmd = await requestActivationCommand(machine, cycleKey);
-    stage = "handshake";
-    bluetoothFailureStage = stage;
-    await sendAndWatchForError(CMD.HANDSHAKE, 1000);
+    const prepared = await requestActivationCommand(machine, cycleKey);
+    activationId = prepared.activationId;
+    let activateCmd = prepared.command;
     stage = "activation";
     bluetoothFailureStage = stage;
-    await sendAndWatchForError(activateCmd, 1000);
+    const activation = await sendAndObserve(activateCmd, ACK.ACTIVATE, 1200);
     activateCmd = "";
     stage = "execution";
     bluetoothFailureStage = stage;
-    await sendAndWatchForError(CMD.EXEC, 2000);
+    const execution = await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
+    stage = "confirmation";
+    bluetoothFailureStage = stage;
+    setActivity("Confirming start", `${machine.name} is responding`, "warn");
+    const confirmation = await confirmSelectedMachineStarted();
+    if (!confirmation.confirmed) {
+      const allowanceProtected = Boolean(activationId);
+      const error = new Error(
+        `Machine start unconfirmed (handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
+      );
+      error.code = "activation_unconfirmed";
+      reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });
+      await cancelPreparedActivation(activationId, confirmation.reason);
+      activationId = "";
+      await disconnect("sequence-unconfirmed");
+      setStatus(`${machine?.name || "Machine"} start unconfirmed`, "warn");
+      setActivity(
+        "Start unconfirmed",
+        allowanceProtected
+          ? "Check the machine before trying again. No activation was used."
+          : "Check the machine before trying again and review your remaining activations.",
+        "warn"
+      );
+      return;
+    }
     stage = "completion";
     bluetoothFailureStage = stage;
-    await completeTrialActivationIfNeeded(machine, cycleKey);
+    await completeConfirmedActivation(activationId, machine, cycleKey);
+    activationId = "";
 
     preserveSuccessDisconnectUI = true;
     clearTimeout(cycleCooldownTimer);
@@ -1813,8 +1895,9 @@ async function runSequence(machine, cycleKey) {
     setTimeout(() => window.LaundryFeedbackPrompt?.maybeShow(), 2200);
   } catch (e) {
     preserveSuccessDisconnectUI = false;
+    await cancelPreparedActivation(activationId, e?.code || stage);
     const limitReached = e?.code === "weekly_limit_reached";
-    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution"].includes(stage)) {
+    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution", "confirmation"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error: e, machine });
     }
     if (limitReached) {
@@ -1878,18 +1961,49 @@ async function getOccupancyCharacteristic() {
   throw new Error("Occupancy characteristic not found");
 }
 
+async function readSelectedMachineOccupancy() {
+  const occupancyChar = await getOccupancyCharacteristic();
+  const value = await occupancyChar.readValue();
+  const textValue = dataViewToText(value);
+  const hexValue = dataViewToHex(value);
+  return {
+    inUse: textValue === "1120" || hexValue === "1120",
+    raw: textValue || hexValue
+  };
+}
+
+async function confirmSelectedMachineStarted() {
+  let successfulReads = 0;
+  let lastError = null;
+  let lastRaw = "";
+  for (const delayMs of START_CONFIRMATION_DELAYS_MS) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (!isConnected()) return { confirmed: false, reason: "disconnected", successfulReads, lastRaw };
+    try {
+      const state = await readSelectedMachineOccupancy();
+      successfulReads += 1;
+      lastRaw = state.raw;
+      if (state.inUse) return { confirmed: true, reason: "occupied", successfulReads, lastRaw };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  return {
+    confirmed: false,
+    reason: successfulReads ? "not_in_use" : "occupancy_read_failed",
+    successfulReads,
+    lastRaw,
+    error: lastError
+  };
+}
+
 async function checkSelectedMachineInUse({ silent = false } = {}) {
   const machine = getSelectedMachine();
   if (!machine) return { blocked: false, reason: "No machine selected" };
 
   try {
-    const occupancyChar = await getOccupancyCharacteristic();
-    const value = await occupancyChar.readValue();
-
-    const textValue = dataViewToText(value);
-    const hexValue = dataViewToHex(value);
-
-    const isInUse = textValue === "1120" || hexValue === "1120";
+    const occupancy = await readSelectedMachineOccupancy();
+    const isInUse = occupancy.inUse;
     const key = getMachineKey(machine);
 
     if (isInUse) {
@@ -1897,7 +2011,7 @@ async function checkSelectedMachineInUse({ silent = false } = {}) {
       updateMachinesInUseNotice();
       setActivity("Machine in use", `${machine.name} is currently in use.`, "warn");
       setStatus(`${machine.name} in use`, "warn");
-      return { blocked: true, reason: "Machine in use", raw: textValue || hexValue };
+      return { blocked: true, readable: true, reason: "Machine in use", raw: occupancy.raw };
     }
 
     machinesInUse.delete(key);
@@ -1907,7 +2021,7 @@ async function checkSelectedMachineInUse({ silent = false } = {}) {
       setActivity("Machine available", `${machine.name} can continue.`, "ok");
     }
 
-    return { blocked: false, reason: "Available", raw: textValue || hexValue };
+    return { blocked: false, readable: true, reason: "Available", raw: occupancy.raw };
   } catch (e) {
     updateMachinesInUseNotice(`Could not check ${machine.name}; continuing.`);
 
@@ -1915,7 +2029,7 @@ async function checkSelectedMachineInUse({ silent = false } = {}) {
       setActivity("Could not check usage", "Continuing anyway.", "warn");
     }
 
-    return { blocked: false, reason: "Read error, continuing" };
+    return { blocked: false, readable: false, reason: "Read error, continuing", error: e };
   }
 }
 

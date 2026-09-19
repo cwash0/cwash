@@ -21,6 +21,12 @@ const CMD = {
   HANDSHAKE: "[HANDSHAKE:ENABLE]",
   EXEC: "[EXEC]"
 };
+const ACK = {
+  HANDSHAKE: "[ACK:HANDSHAKE]",
+  ACTIVATE: "[ACK:ACTIVATE]",
+  EXEC: "[ACK:EXEC]"
+};
+const START_CONFIRMATION_DELAYS_MS = [600, 1000, 1500, 2200, 3000];
 const DEFAULT_WASHER_CYCLES = {
   standardEco: "Standard Eco",
   extraWash: "Extra Wash",
@@ -1004,21 +1010,51 @@ function onNotify(event) {
   notificationText += dec.decode(chunk);
 }
 
-async function sendAndWatchForError(command, waitMs) {
+async function writeMachineCommand(command) {
   if (!txChar) throw new Error("Machine connection is not ready");
-  notificationText = "";
   const bytes = enc.encode(command);
+  if (txChar.properties?.write) {
+    if (typeof txChar.writeValueWithResponse === "function") {
+      await txChar.writeValueWithResponse(bytes);
+      return;
+    }
+    await txChar.writeValue(bytes);
+    return;
+  }
   try { await txChar.writeValueWithoutResponse(bytes); } catch (_) { await txChar.writeValue(bytes); }
+}
+
+async function sendAndObserve(command, expectedAck, waitMs) {
+  notificationText = "";
+  await writeMachineCommand(command);
   await new Promise((resolve) => setTimeout(resolve, waitMs));
 
   const response = notificationText;
   notificationText = "";
-  if (!response.toUpperCase().includes("ERROR")) return;
+  const normalized = response.toUpperCase();
+  if (!normalized.includes("ERROR")) {
+    return {
+      acknowledged: Boolean(expectedAck) && normalized.includes(String(expectedAck).toUpperCase()),
+      response
+    };
+  }
 
   const error = new Error(`Machine reported ${response.trim() || "ERROR"}`);
   error.code = "machine_error";
   error.response = response;
   throw error;
+}
+
+async function sendHandshakeWithRetry() {
+  const observation = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1200);
+  if (observation.acknowledged || !isConnected()) return observation;
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const retry = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1500);
+  return {
+    acknowledged: retry.acknowledged,
+    response: [observation.response, retry.response].filter(Boolean).join("\n"),
+    attempts: 2
+  };
 }
 
 async function enableRxNotifications() {
@@ -1122,27 +1158,64 @@ async function connect() {
   }
 }
 
+async function getTrialOccupancyCharacteristic() {
+  try { return await service.getCharacteristic(OCCUPANCY_UUID); }
+  catch (_) {
+    const heartService = await server.getPrimaryService(HEART_RATE_SERVICE_UUID);
+    return heartService.getCharacteristic(OCCUPANCY_UUID);
+  }
+}
+
+async function readTrialOccupancy() {
+  const characteristic = await getTrialOccupancyCharacteristic();
+  const value = await characteristic.readValue();
+  const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  const text = dec.decode(bytes).replace(/\0/g, "").trim();
+  const hex = Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { inUse: text === "1120" || hex === "1120", raw: text || hex };
+}
+
 async function checkOccupied() {
   const machine = selectedMachine();
   try {
-    let characteristic;
-    try { characteristic = await service.getCharacteristic(OCCUPANCY_UUID); }
-    catch (_) {
-      const heartService = await server.getPrimaryService(HEART_RATE_SERVICE_UUID);
-      characteristic = await heartService.getCharacteristic(OCCUPANCY_UUID);
-    }
-    const value = await characteristic.readValue();
-    const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    const text = dec.decode(bytes).replace(/\0/g, "").trim();
-    const hex = Array.from(bytes).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-    const occupied = text === "1120" || hex === "1120";
-    els.inUse.textContent = occupied ? `${machine.name} is currently in use.` : "";
-    els.inUse.classList.toggle("hidden", !occupied);
-    return occupied;
+    const state = await readTrialOccupancy();
+    els.inUse.textContent = state.inUse ? `${machine.name} is currently in use.` : "";
+    els.inUse.classList.toggle("hidden", !state.inUse);
+    return state.inUse;
   } catch (_) {
     els.inUse.classList.add("hidden");
     return false;
   }
+}
+
+async function confirmTrialMachineStarted() {
+  let successfulReads = 0;
+  let lastError = null;
+  let lastRaw = "";
+  for (const delayMs of START_CONFIRMATION_DELAYS_MS) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (!isConnected()) return { confirmed: false, reason: "disconnected", successfulReads, lastRaw };
+    try {
+      const state = await readTrialOccupancy();
+      successfulReads += 1;
+      lastRaw = state.raw;
+      if (state.inUse) return { confirmed: true, reason: "occupied", successfulReads, lastRaw };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  return {
+    confirmed: false,
+    reason: successfulReads ? "not_in_use" : "occupancy_read_failed",
+    successfulReads,
+    lastRaw,
+    error: lastError
+  };
+}
+
+async function cancelTrialActivation(activationId, reason = "unconfirmed") {
+  if (!activationId) return;
+  try { await api("cancel_activation", { activationId, reason }); } catch (_) {}
 }
 
 async function startMachine(machine, cycleKey, label) {
@@ -1164,23 +1237,38 @@ async function startMachine(machine, cycleKey, label) {
     bluetoothFailureStage = stage;
     resetMessages();
     await enableRxNotifications();
+    stage = "handshake";
+    bluetoothFailureStage = stage;
+    const handshake = await sendHandshakeWithRetry();
     stage = "authorization";
     bluetoothFailureStage = stage;
     const prepared = await api("prepare_activation", { machineId: machineKey(machine), cycleKey });
     stage = "prepared";
     context = { ...context, activation: { id: prepared.activationId, status: prepared.activationStatus, preparedAt: prepared.preparedAt } };
-    stage = "handshake";
-    bluetoothFailureStage = stage;
-    await sendAndWatchForError(CMD.HANDSHAKE, 1000);
     stage = "activation";
     bluetoothFailureStage = stage;
-    await sendAndWatchForError(String(prepared.activationCommand), 1000);
+    const activation = await sendAndObserve(String(prepared.activationCommand), ACK.ACTIVATE, 1200);
     stage = "execution";
     bluetoothFailureStage = stage;
-    await sendAndWatchForError(CMD.EXEC, 2000);
+    const execution = await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
     stage = "execution-observed";
-    bluetoothFailureStage = "completion";
-    const completion = await api("complete_activation");
+    bluetoothFailureStage = "confirmation";
+    setActivity("Confirming start", machine.name, "warn");
+    const confirmation = await confirmTrialMachineStarted();
+    if (!confirmation.confirmed) {
+      const error = new Error(
+        `Machine start unconfirmed (handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
+      );
+      error.code = "activation_unconfirmed";
+      reportBluetoothFailure("bluetooth_activation_failed", { stage: "confirmation", error, machine });
+      await cancelTrialActivation(prepared.activationId, confirmation.reason);
+      if (isConnected()) await disconnect("sequence-unconfirmed");
+      showActivationOutcome("uncertain", context);
+      return;
+    }
+    stage = "completion";
+    bluetoothFailureStage = stage;
+    const completion = await api("complete_activation", { activationId: prepared.activationId });
     stage = "completed";
     context = { ...context, activation: completion.activation || context.activation, activatedAt: completion.activatedAt };
     saveClaim({ ...claim, used: true, activatedAt: completion.activatedAt || new Date().toISOString(), activation: completion.activation || context.activation });
@@ -1196,6 +1284,7 @@ async function startMachine(machine, cycleKey, label) {
     // the browser's Bluetooth overlay on top of the savings screen.
     showActivationOutcome("success", context);
   } catch (error) {
+    await cancelTrialActivation(context.activation?.id, error?.code || stage);
     if (error.code === "trial_used") {
       try { applySession(await api("session")); }
       catch (_) { showActivationOutcome("uncertain", context); }
