@@ -51,8 +51,6 @@ const HEART_RATE_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb";
 
 const CMD = {
   HANDSHAKE: "[HANDSHAKE:ENABLE]",
-  VERSION: "[VERSION]",
-  COIN_DISABLE: "[COIN:DISABLE:OCCUPIED_LOW]",
   EXEC: "[EXEC]",
 };
 
@@ -189,9 +187,7 @@ let server = null;
 let service = null;
 let rxChar = null;
 let txChar = null;
-let rxBuf = new Uint8Array(0);
-const msgQueue = [];
-let waiters = [];
+let notificationText = "";
 let machinePickerReturnFocus = null;
 
 function normaliseAccessCode(value) {
@@ -1629,70 +1625,15 @@ async function restoreUpgradePaymentReturn(code, paymentIntentId) {
   return "";
 }
 
-function resetRx(reason = "Connection reset") {
-  rxBuf = new Uint8Array(0);
-  msgQueue.length = 0;
-  waiters.forEach((w) => { clearTimeout(w.timer); try { w.reject(new Error(reason)); } catch {} });
-  waiters = [];
-}
-
-function concatU8(a, b) {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
-function extractFrames(bufRef) {
-  const frames = [];
-  while (true) {
-    const start = bufRef.indexOf("[".charCodeAt(0));
-    if (start < 0) { rxBuf = new Uint8Array(0); return frames; }
-    if (start > 0) { bufRef = bufRef.slice(start); rxBuf = bufRef; }
-    const end = bufRef.indexOf("]".charCodeAt(0), 1);
-    if (end < 0) return frames;
-    frames.push(bufRef.slice(0, end + 1));
-    bufRef = bufRef.slice(end + 1);
-    rxBuf = bufRef;
-  }
-}
-
-function enqueueMsg(message) { msgQueue.push(message); resolveWaiters(); }
-
-function resolveWaiters() {
-  if (!waiters.length || !msgQueue.length) return;
-  for (let i = 0; i < waiters.length; i += 1) {
-    const waiter = waiters[i];
-    const idx = msgQueue.findIndex((m) => m.startsWith(waiter.prefix));
-    if (idx >= 0) {
-      const [hit] = msgQueue.splice(idx, 1);
-      clearTimeout(waiter.timer);
-      waiter.resolve(hit);
-      waiters.splice(i, 1);
-      i -= 1;
-    }
-  }
-}
-
-function waitForPrefix(prefix, timeoutMs = 8000) {
-  const idx = msgQueue.findIndex((m) => m.startsWith(prefix));
-  if (idx >= 0) { const [hit] = msgQueue.splice(idx, 1); return Promise.resolve(hit); }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const i = waiters.findIndex((w) => w.resolve === resolve);
-      if (i >= 0) waiters.splice(i, 1);
-      reject(new Error(`Timeout waiting for ${prefix}`));
-    }, timeoutMs);
-    waiters.push({ prefix, resolve, reject, timer });
-  });
+function resetRx() {
+  notificationText = "";
 }
 
 function onNotify(event) {
   try {
     const value = event.target.value;
     const chunk = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    rxBuf = concatU8(rxBuf, chunk);
-    for (const raw of extractFrames(rxBuf)) enqueueMsg(dec.decode(raw));
+    notificationText += dec.decode(chunk);
   } catch (e) { debugOnly(`Notify parse error: ${String(e)}`, "warn"); }
 }
 
@@ -1703,10 +1644,34 @@ async function writeAscii(text) {
   catch { await txChar.writeValue(bytes); }
 }
 
-async function send(text, expectPrefix = null, timeoutMs = 8000) {
+async function sendAndWatchForError(text, waitMs) {
+  notificationText = "";
   await writeAscii(text);
-  if (!expectPrefix) return "";
-  return waitForPrefix(expectPrefix, timeoutMs);
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+  const response = notificationText;
+  notificationText = "";
+  if (!response.toUpperCase().includes("ERROR")) return;
+
+  const error = new Error(`Machine reported ${response.trim() || "ERROR"}`);
+  error.code = "machine_error";
+  error.response = response;
+  throw error;
+}
+
+async function enableRxNotifications() {
+  if (rxChar) return;
+  if (!service) throw new Error("Bluetooth service not ready");
+
+  const characteristic = await service.getCharacteristic(RX_UUID);
+  characteristic.addEventListener("characteristicvaluechanged", onNotify);
+  try {
+    await characteristic.startNotifications();
+    rxChar = characteristic;
+  } catch (error) {
+    try { characteristic.removeEventListener("characteristicvaluechanged", onNotify); } catch {}
+    throw error;
+  }
 }
 
 function updateWeeklyUsageFromData(data) {
@@ -1805,28 +1770,26 @@ async function completeTrialActivationIfNeeded() {
 }
 
 async function runSequence(machine, cycleKey) {
-  let stage = "handshake";
+  let stage = "rx_notifications";
   unexpectedBluetoothDisconnectReported = false;
   try {
     bluetoothFailureStage = stage;
-    await send(CMD.HANDSHAKE, "[ACK:HANDSHAKE]", 8000);
-    stage = "version";
-    bluetoothFailureStage = stage;
-    await send(CMD.VERSION, "[VERSION:", 8000);
-    stage = "coin_disable";
-    bluetoothFailureStage = stage;
-    await send(CMD.COIN_DISABLE, "[ACK:COIN]", 8000);
+    resetRx();
+    await enableRxNotifications();
     setActivity("Authorising start", "Preparing secure command", "warn");
     stage = "authorization";
     bluetoothFailureStage = stage;
     let activateCmd = await requestActivationCommand(machine, cycleKey);
-    stage = "activation_ack";
+    stage = "handshake";
     bluetoothFailureStage = stage;
-    await send(activateCmd, "[ACK:ACTIVATE]", 8000);
+    await sendAndWatchForError(CMD.HANDSHAKE, 1000);
+    stage = "activation";
+    bluetoothFailureStage = stage;
+    await sendAndWatchForError(activateCmd, 1000);
     activateCmd = "";
-    stage = "execution_ack";
+    stage = "execution";
     bluetoothFailureStage = stage;
-    await send(CMD.EXEC, "[ACK:EXEC]", 8000);
+    await sendAndWatchForError(CMD.EXEC, 2000);
     stage = "completion";
     bluetoothFailureStage = stage;
     await completeTrialActivationIfNeeded();
@@ -1846,7 +1809,7 @@ async function runSequence(machine, cycleKey) {
   } catch (e) {
     preserveSuccessDisconnectUI = false;
     const limitReached = e?.code === "weekly_limit_reached";
-    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["handshake", "version", "coin_disable", "activation_ack", "execution_ack"].includes(stage)) {
+    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error: e, machine });
     }
     if (limitReached) {
@@ -2009,14 +1972,6 @@ async function connect() {
     stage = "tx_characteristic";
     bluetoothFailureStage = stage;
     txChar = await service.getCharacteristic(TX_UUID);
-
-    try {
-      stage = "rx_notifications";
-      bluetoothFailureStage = stage;
-      rxChar = await service.getCharacteristic(RX_UUID);
-      await rxChar.startNotifications();
-      rxChar.addEventListener("characteristicvaluechanged", onNotify);
-    } catch { rxChar = null; }
 
     stage = "occupancy_check";
     bluetoothFailureStage = stage;

@@ -19,8 +19,6 @@ const ANALYTICS_VISITOR_KEY = "laundryAnalyticsVisitor";
 const ANALYTICS_SESSION_KEY = "laundryAnalyticsSession";
 const CMD = {
   HANDSHAKE: "[HANDSHAKE:ENABLE]",
-  VERSION: "[VERSION]",
-  COIN_DISABLE: "[COIN:DISABLE:OCCUPIED_LOW]",
   EXEC: "[EXEC]"
 };
 const DEFAULT_WASHER_CYCLES = {
@@ -159,9 +157,7 @@ let server = null;
 let service = null;
 let rxChar = null;
 let txChar = null;
-let rxBuf = new Uint8Array(0);
-let messageQueue = [];
-let waiters = [];
+let notificationText = "";
 let completed = false;
 let iosBluefyPromptRequested = false;
 let bluefyCopyToastTimer = null;
@@ -998,71 +994,46 @@ function setConnectedUI(connected) {
   cycleButtons.forEach((button) => { button.disabled = !canStart; });
 }
 
-function resetMessages(reason = "Connection reset") {
-  rxBuf = new Uint8Array(0);
-  messageQueue = [];
-  waiters.forEach((waiter) => { clearTimeout(waiter.timer); waiter.reject(new Error(reason)); });
-  waiters = [];
-}
-
-function concatBytes(a, b) {
-  const output = new Uint8Array(a.length + b.length);
-  output.set(a, 0);
-  output.set(b, a.length);
-  return output;
-}
-
-function extractFrames(buffer) {
-  const frames = [];
-  let current = buffer;
-  while (true) {
-    const start = current.indexOf("[".charCodeAt(0));
-    if (start < 0) { rxBuf = new Uint8Array(0); return frames; }
-    if (start > 0) current = current.slice(start);
-    const end = current.indexOf("]".charCodeAt(0), 1);
-    if (end < 0) { rxBuf = current; return frames; }
-    frames.push(current.slice(0, end + 1));
-    current = current.slice(end + 1);
-    rxBuf = current;
-  }
-}
-
-function resolveWaiters() {
-  waiters.forEach((waiter, waiterIndex) => {
-    const messageIndex = messageQueue.findIndex((message) => message.startsWith(waiter.prefix));
-    if (messageIndex < 0) return;
-    const [message] = messageQueue.splice(messageIndex, 1);
-    clearTimeout(waiter.timer);
-    waiter.resolve(message);
-    waiters.splice(waiterIndex, 1);
-  });
+function resetMessages() {
+  notificationText = "";
 }
 
 function onNotify(event) {
   const value = event.target.value;
   const chunk = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-  rxBuf = concatBytes(rxBuf, chunk);
-  extractFrames(rxBuf).forEach((frame) => messageQueue.push(dec.decode(frame)));
-  resolveWaiters();
+  notificationText += dec.decode(chunk);
 }
 
-function waitFor(prefix, timeoutMs = 8000) {
-  const index = messageQueue.findIndex((message) => message.startsWith(prefix));
-  if (index >= 0) return Promise.resolve(messageQueue.splice(index, 1)[0]);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      waiters = waiters.filter((waiter) => waiter.resolve !== resolve);
-      reject(new Error(`Timeout waiting for ${prefix}`));
-    }, timeoutMs);
-    waiters.push({ prefix, resolve, reject, timer });
-  });
-}
-
-async function send(command, expectedPrefix) {
+async function sendAndWatchForError(command, waitMs) {
   if (!txChar) throw new Error("Machine connection is not ready");
+  notificationText = "";
   const bytes = enc.encode(command);
   try { await txChar.writeValueWithoutResponse(bytes); } catch (_) { await txChar.writeValue(bytes); }
-  return expectedPrefix ? waitFor(expectedPrefix) : "";
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+  const response = notificationText;
+  notificationText = "";
+  if (!response.toUpperCase().includes("ERROR")) return;
+
+  const error = new Error(`Machine reported ${response.trim() || "ERROR"}`);
+  error.code = "machine_error";
+  error.response = response;
+  throw error;
+}
+
+async function enableRxNotifications() {
+  if (rxChar) return;
+  if (!service) throw new Error("Bluetooth service not ready");
+
+  const characteristic = await service.getCharacteristic(RX_UUID);
+  characteristic.addEventListener("characteristicvaluechanged", onNotify);
+  try {
+    await characteristic.startNotifications();
+    rxChar = characteristic;
+  } catch (error) {
+    try { characteristic.removeEventListener("characteristicvaluechanged", onNotify); } catch (_) {}
+    throw error;
+  }
 }
 
 function bluetoothOptions(machine) {
@@ -1113,13 +1084,6 @@ async function connect() {
     stage = "tx_characteristic";
     bluetoothFailureStage = stage;
     txChar = await service.getCharacteristic(TX_UUID);
-    try {
-      stage = "rx_notifications";
-      bluetoothFailureStage = stage;
-      rxChar = await service.getCharacteristic(RX_UUID);
-      await rxChar.startNotifications();
-      rxChar.addEventListener("characteristicvaluechanged", onNotify);
-    } catch (_) { rxChar = null; }
     stage = "occupancy_check";
     bluetoothFailureStage = stage;
     const occupied = await checkOccupied();
@@ -1196,27 +1160,25 @@ async function startMachine(machine, cycleKey, label) {
     showActivationOutcome("pending", context);
     setActivity("Starting...", `${machine.name} - ${label}`, "warn");
     setStatus(`Starting ${machine.name}…`);
-    stage = "handshake";
+    stage = "rx_notifications";
     bluetoothFailureStage = stage;
-    await send(CMD.HANDSHAKE, "[ACK:HANDSHAKE]");
-    stage = "version";
-    bluetoothFailureStage = stage;
-    await send(CMD.VERSION, "[VERSION:");
-    stage = "coin_disable";
-    bluetoothFailureStage = stage;
-    await send(CMD.COIN_DISABLE, "[ACK:COIN]");
+    resetMessages();
+    await enableRxNotifications();
     stage = "authorization";
     bluetoothFailureStage = stage;
     const prepared = await api("prepare_activation", { machineId: machineKey(machine), cycleKey });
     stage = "prepared";
     context = { ...context, activation: { id: prepared.activationId, status: prepared.activationStatus, preparedAt: prepared.preparedAt } };
-    stage = "activation_ack";
+    stage = "handshake";
     bluetoothFailureStage = stage;
-    await send(String(prepared.activationCommand), "[ACK:ACTIVATE]");
-    stage = "execution_ack";
+    await sendAndWatchForError(CMD.HANDSHAKE, 1000);
+    stage = "activation";
     bluetoothFailureStage = stage;
-    await send(CMD.EXEC, "[ACK:EXEC]");
-    stage = "execution-acknowledged";
+    await sendAndWatchForError(String(prepared.activationCommand), 1000);
+    stage = "execution";
+    bluetoothFailureStage = stage;
+    await sendAndWatchForError(CMD.EXEC, 2000);
+    stage = "execution-observed";
     bluetoothFailureStage = "completion";
     const completion = await api("complete_activation");
     stage = "completed";
@@ -1240,7 +1202,7 @@ async function startMachine(machine, cycleKey, label) {
       bluetoothFailureStage = isConnected() ? "connected" : "idle";
       return;
     }
-    if (!unexpectedBluetoothDisconnectReported && ["handshake", "version", "coin_disable", "activation_ack", "execution_ack"].includes(stage)) {
+    if (!unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });
     }
     if (isConnected()) await disconnect("sequence-error");
@@ -1251,7 +1213,7 @@ async function startMachine(machine, cycleKey, label) {
       els.outcomeReassurance.textContent = "No free start was used. Try again later or continue with paid access for this site.";
       return;
     }
-    const uncertain = ["activation_ack", "activation-acknowledged", "execution_ack", "execution-acknowledged", "completed"].includes(stage);
+    const uncertain = error.code !== "machine_error" && ["activation", "execution", "execution-observed", "completed"].includes(stage);
     showActivationOutcome(uncertain ? "uncertain" : "failure", context);
   }
   bluetoothFailureStage = isConnected() ? "connected" : "idle";
