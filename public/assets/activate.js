@@ -1662,10 +1662,10 @@ async function writeAscii(text) {
 async function sendAndObserve(text, expectedAck, waitMs) {
   notificationText = "";
   await writeAscii(text);
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
   if (!rxChar) {
     return { acknowledged: false, response: "", notificationsAvailable: false };
   }
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
 
   const response = notificationText;
   notificationText = "";

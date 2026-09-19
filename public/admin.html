@@ -6,7 +6,7 @@
   <meta name="robots" content="noindex,nofollow" />
   <title>CircuitWash Control</title>
   <link rel="icon" href="assets/favicon.png" type="image/png" />
-  <link rel="stylesheet" href="assets/admin.css?v=10" />
+  <link rel="stylesheet" href="assets/admin.css?v=11" />
 </head>
 <body>
   <div id="loginOverlay" class="login-overlay">
@@ -73,6 +73,7 @@
 
           <details class="advanced-block dashboard-trend">
             <summary><span><strong>30-day revenue trend</strong><small>Open historical performance</small></span></summary>
+            <div class="dashboard-trend-toolbar"><span id="dashboardRevenueModeLabel">Daily revenue</span><label class="growth-revenue-toggle" for="dashboardRevenueCumulative"><input id="dashboardRevenueCumulative" type="checkbox" /><span class="growth-revenue-toggle-track" aria-hidden="true"></span><span>Cumulative revenue</span></label></div>
             <div class="chart-wrap"><canvas id="trendChart" aria-label="Thirty day revenue chart"></canvas></div>
           </details>
         </section>
@@ -200,11 +201,14 @@
           <section class="panel growth-history-panel">
             <div class="section-heading">
               <div><span class="eyebrow">Growth history</span><h2>What changed in each period</h2><p id="growthHistorySummary">First-time customers, sales, and newly reached locations over time.</p></div>
-              <div class="growth-chart-controls" role="group" aria-label="Growth chart metric">
-                <button class="active" data-growth-chart-metric="newCustomers" type="button" aria-pressed="true">Customers</button>
-                <button data-growth-chart-metric="orders" type="button" aria-pressed="false">Orders</button>
-                <button data-growth-chart-metric="revenue" type="button" aria-pressed="false">Revenue</button>
-                <button data-growth-chart-metric="reach" type="button" aria-pressed="false">Reach</button>
+              <div class="growth-history-controls">
+                <div class="growth-chart-controls" role="group" aria-label="Growth chart metric">
+                  <button class="active" data-growth-chart-metric="newCustomers" type="button" aria-pressed="true">Customers</button>
+                  <button data-growth-chart-metric="orders" type="button" aria-pressed="false">Orders</button>
+                  <button data-growth-chart-metric="revenue" type="button" aria-pressed="false">Revenue</button>
+                  <button data-growth-chart-metric="reach" type="button" aria-pressed="false">Reach</button>
+                </div>
+                <label class="growth-revenue-toggle" for="growthRevenueCumulative"><input id="growthRevenueCumulative" type="checkbox" disabled /><span class="growth-revenue-toggle-track" aria-hidden="true"></span><span>Cumulative revenue</span></label>
               </div>
             </div>
             <div id="growthChartLegend" class="growth-chart-legend" aria-hidden="true"></div>
@@ -386,7 +390,7 @@
     <div class="modal-card email-confirm-card"><div class="modal-head"><div><span class="eyebrow">Final confirmation</span><h2 id="emailSendConfirmTitle">Submit customer email</h2><p>This action creates provider deliveries for the confirmed recipients.</p></div><button id="closeEmailSendConfirmBtn" class="icon-button" type="button" aria-label="Close">&times;</button></div><dl class="email-confirm-list"><div><dt>Subject</dt><dd id="emailConfirmSubject">-</dd></div><div><dt>Recipients</dt><dd id="emailConfirmRecipients">-</dd></div><div><dt>Audience</dt><dd id="emailConfirmAudience">-</dd></div><div><dt>Sender</dt><dd id="emailConfirmSender">-</dd></div><div><dt>Delivery</dt><dd id="emailConfirmDelivery">Send now</dd></div></dl><div class="email-confirm-preview"><iframe id="emailConfirmFrame" title="Confirmed email preview"></iframe></div><div class="modal-actions"><button id="cancelEmailSendConfirmBtn" class="button" type="button">Go back</button><button id="confirmEmailSendBtn" class="button primary" type="button">Send email</button></div><div id="emailConfirmMessage" class="message" aria-live="polite"></div></div>
   </div>
 
-  <script src="assets/admin.js?v=control-centre-18"></script>
+  <script src="assets/admin.js?v=control-centre-20"></script>
   <script src="assets/email-builder.js?v=6"></script>
 </body>
 </html>

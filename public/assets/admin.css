@@ -625,10 +625,20 @@ button.ramp-row:hover { background: var(--surface-2); }
 .growth-history-panel, .paid-market-panel, .usage-history-panel, .usage-performance-panel, .bluetooth-failure-panel { margin-bottom: 16px; }
 .usage-history-panel th:nth-child(n+2), .usage-history-panel td:nth-child(n+2), .usage-performance-panel th:nth-child(n+2), .usage-performance-panel td:nth-child(n+2) { text-align: right; }
 .usage-history-panel tbody tr:first-child { background: #f5faf9; }
+.growth-history-controls { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .growth-chart-controls { display: inline-flex; flex: 0 0 auto; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: #edf1f4; }
 .growth-chart-controls button { min-height: 29px; padding: 4px 9px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-size: .64rem; font-weight: 750; cursor: pointer; }
 .growth-chart-controls button:hover { color: var(--ink); background: rgba(255,255,255,.65); }
 .growth-chart-controls button.active { color: var(--accent-strong); background: #fff; box-shadow: 0 1px 3px rgba(21,34,46,.1); }
+.growth-revenue-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .63rem; font-weight: 720; cursor: pointer; user-select: none; }
+.growth-revenue-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.growth-revenue-toggle-track { position: relative; width: 30px; height: 17px; flex: 0 0 auto; border-radius: 999px; background: #cbd4db; transition: background .16s ease; }
+.growth-revenue-toggle-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(20,35,48,.22); transition: transform .16s ease; }
+.growth-revenue-toggle input:checked + .growth-revenue-toggle-track { background: var(--accent); }
+.growth-revenue-toggle input:checked + .growth-revenue-toggle-track::after { transform: translateX(13px); }
+.growth-revenue-toggle input:focus-visible + .growth-revenue-toggle-track { outline: 2px solid rgba(23,107,99,.32); outline-offset: 2px; }
+.growth-revenue-toggle:has(input:disabled) { opacity: .42; cursor: not-allowed; }
+.dashboard-trend-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 0; color: var(--muted); font-size: .65rem; font-weight: 700; }
 .growth-chart-legend { min-height: 22px; display: flex; align-items: center; gap: 14px; margin: 2px 0 4px 58px; color: var(--muted); font-size: .62rem; font-weight: 650; }
 .growth-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .growth-chart-legend i { width: 18px; height: 3px; display: inline-block; border-radius: 3px; background: var(--legend-color); }

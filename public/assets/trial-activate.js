@@ -1026,10 +1026,10 @@ async function writeMachineCommand(command) {
 async function sendAndObserve(command, expectedAck, waitMs) {
   notificationText = "";
   await writeMachineCommand(command);
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
   if (!rxChar) {
     return { acknowledged: false, response: "", notificationsAvailable: false };
   }
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
 
   const response = notificationText;
   notificationText = "";

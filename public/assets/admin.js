@@ -21,7 +21,8 @@ let promosData = [];
 let analyticsData = null;
 let usageAnalyticsData = null;
 let paidAnalyticsView = "growth";
-let growthChartState = { metric: "newCustomers", points: [], currency: "GBP", activeIndex: null, geometry: null };
+let dashboardRevenueCumulative = false;
+let growthChartState = { metric: "newCustomers", revenueCumulative: false, points: [], currency: "GBP", activeIndex: null, geometry: null };
 let analyticsHitPaging = { cursor: null, nextCursor: null, history: [], loading: false };
 let analyticsView = "overview";
 let selectedAnalyticsCity = "";
@@ -51,10 +52,10 @@ const els = {
   refreshBtn: $("refreshBtn"), logoutBtn: $("logoutBtn"), lastUpdated: $("lastUpdated"), commandHealthText: $("commandHealthText"),
   navOrdersBadge: $("navOrdersBadge"), navSupportBadge: $("navSupportBadge"),
   metricRevenue: $("metricRevenue"), metricRevenueSub: $("metricRevenueSub"), metricOrders: $("metricOrders"), metricOrdersSub: $("metricOrdersSub"),
-  metricActivations: $("metricActivations"), metricSupport: $("metricSupport"), metricSupportSub: $("metricSupportSub"), trendChart: $("trendChart"),
+  metricActivations: $("metricActivations"), metricSupport: $("metricSupport"), metricSupportSub: $("metricSupportSub"), trendChart: $("trendChart"), dashboardRevenueCumulative: $("dashboardRevenueCumulative"), dashboardRevenueModeLabel: $("dashboardRevenueModeLabel"),
   recentOrdersBody: $("recentOrdersBody"), methodBreakdown: $("methodBreakdown"), orderTypeBreakdown: $("orderTypeBreakdown"), topSites: $("topSites"), emailDelivery: $("emailDelivery"),
   reloadAnalyticsBtn: $("reloadAnalyticsBtn"), analyticsRange: $("analyticsRange"), analyticsTodayMetric: $("analyticsTodayMetric"), analyticsPeriodMetric: $("analyticsPeriodMetric"), analyticsPeriodSub: $("analyticsPeriodSub"), analyticsNoOrderMetric: $("analyticsNoOrderMetric"), analyticsNoOrderSub: $("analyticsNoOrderSub"), analyticsUniqueMetric: $("analyticsUniqueMetric"), analyticsRejectedAdminMetric: $("analyticsRejectedAdminMetric"), analyticsBotSub: $("analyticsBotSub"), analyticsDataQuality: $("analyticsDataQuality"), analyticsTrendSummary: $("analyticsTrendSummary"), analyticsDemandTrend: $("analyticsDemandTrend"), analyticsActivationTrend: $("analyticsActivationTrend"), analyticsTopSites: $("analyticsTopSites"), analyticsTopSearches: $("analyticsTopSearches"), analyticsSearchModes: $("analyticsSearchModes"), analyticsReferrers: $("analyticsReferrers"), analyticsHitsBody: $("analyticsHitsBody"), analyticsHitsPageStatus: $("analyticsHitsPageStatus"), analyticsHitsPrev: $("analyticsHitsPrev"), analyticsHitsNext: $("analyticsHitsNext"), adminLoginAttemptsBody: $("adminLoginAttemptsBody"),
-  growthRange: $("growthRange"), refreshGrowthBtn: $("refreshGrowthBtn"), paidGrowthSummary: $("paidGrowthSummary"), paidCustomersMetric: $("paidCustomersMetric"), paidCustomersSub: $("paidCustomersSub"), newPaidCustomersMetric: $("newPaidCustomersMetric"), newPaidCustomersSub: $("newPaidCustomersSub"), paidRevenueMetric: $("paidRevenueMetric"), paidRevenueSub: $("paidRevenueSub"), paidOrdersMetric: $("paidOrdersMetric"), paidOrdersSub: $("paidOrdersSub"), paidCitiesMetric: $("paidCitiesMetric"), paidCitiesSub: $("paidCitiesSub"), paidSitesMetric: $("paidSitesMetric"), paidSitesSub: $("paidSitesSub"), growthHistorySummary: $("growthHistorySummary"), growthHistoryChart: $("growthHistoryChart"), growthHistoryChartWrap: $("growthHistoryChartWrap"), growthHistoryTooltip: $("growthHistoryTooltip"), growthHistoryChartEmpty: $("growthHistoryChartEmpty"), growthHistoryChartDetails: $("growthHistoryChartDetails"), growthChartLegend: $("growthChartLegend"), newPaidMarkets: $("newPaidMarkets"), cityPerformanceCount: $("cityPerformanceCount"), paidCityRows: $("paidCityRows"), paidSiteRows: $("paidSiteRows"),
+  growthRange: $("growthRange"), refreshGrowthBtn: $("refreshGrowthBtn"), paidGrowthSummary: $("paidGrowthSummary"), paidCustomersMetric: $("paidCustomersMetric"), paidCustomersSub: $("paidCustomersSub"), newPaidCustomersMetric: $("newPaidCustomersMetric"), newPaidCustomersSub: $("newPaidCustomersSub"), paidRevenueMetric: $("paidRevenueMetric"), paidRevenueSub: $("paidRevenueSub"), paidOrdersMetric: $("paidOrdersMetric"), paidOrdersSub: $("paidOrdersSub"), paidCitiesMetric: $("paidCitiesMetric"), paidCitiesSub: $("paidCitiesSub"), paidSitesMetric: $("paidSitesMetric"), paidSitesSub: $("paidSitesSub"), growthHistorySummary: $("growthHistorySummary"), growthRevenueCumulative: $("growthRevenueCumulative"), growthHistoryChart: $("growthHistoryChart"), growthHistoryChartWrap: $("growthHistoryChartWrap"), growthHistoryTooltip: $("growthHistoryTooltip"), growthHistoryChartEmpty: $("growthHistoryChartEmpty"), growthHistoryChartDetails: $("growthHistoryChartDetails"), growthChartLegend: $("growthChartLegend"), newPaidMarkets: $("newPaidMarkets"), cityPerformanceCount: $("cityPerformanceCount"), paidCityRows: $("paidCityRows"), paidSiteRows: $("paidSiteRows"),
   usageAnalyticsSummary: $("usageAnalyticsSummary"), totalActivationsMetric: $("totalActivationsMetric"), periodActivationsMetric: $("periodActivationsMetric"), usageCitiesMetric: $("usageCitiesMetric"), usageCitiesSub: $("usageCitiesSub"), usageSitesMetric: $("usageSitesMetric"), usageSitesSub: $("usageSitesSub"), paidActivationsMetric: $("paidActivationsMetric"), paidActivationsSub: $("paidActivationsSub"), trialActivationsMetric: $("trialActivationsMetric"), trialActivationsSub: $("trialActivationsSub"), usageHistoryRows: $("usageHistoryRows"), usageCityCount: $("usageCityCount"), usageCityRows: $("usageCityRows"), usageSiteCount: $("usageSiteCount"), usageSiteRows: $("usageSiteRows"), bluetoothFailureSummary: $("bluetoothFailureSummary"), bluetoothFailureLatest: $("bluetoothFailureLatest"), bluetoothFailureTotal: $("bluetoothFailureTotal"), bluetoothActivationFailures: $("bluetoothActivationFailures"), bluetoothConnectionFailures: $("bluetoothConnectionFailures"), bluetoothUnexpectedDisconnects: $("bluetoothUnexpectedDisconnects"), bluetoothAffectedSessions: $("bluetoothAffectedSessions"), bluetoothAffectedSites: $("bluetoothAffectedSites"), bluetoothFailureRows: $("bluetoothFailureRows"),
   networkOverviewSummary: $("networkOverviewSummary"), networkActiveUsers: $("networkActiveUsers"), networkActiveUsersDelta: $("networkActiveUsersDelta"), networkNewUsers: $("networkNewUsers"), networkNewUsersDelta: $("networkNewUsersDelta"), networkRepresentedCities: $("networkRepresentedCities"), networkNewCities: $("networkNewCities"), networkNewCitiesDelta: $("networkNewCitiesDelta"), networkActivatedCities: $("networkActivatedCities"), networkActivatedSample: $("networkActivatedSample"), networkActivationRate: $("networkActivationRate"), networkActivationDelta: $("networkActivationDelta"),
   spreadBalance: $("spreadBalance"), breadthDepthSummary: $("breadthDepthSummary"), cityLifecycleStrip: $("cityLifecycleStrip"), cityCoverageSummary: $("cityCoverageSummary"), cityLocationCoverage: $("cityLocationCoverage"), cityCoverageTrend: $("cityCoverageTrend"), cityLifecycleFunnel: $("cityLifecycleFunnel"), newCitiesList: $("newCitiesList"),
@@ -971,6 +972,37 @@ const GROWTH_CHART_METRICS = {
   reach: { label: "Paid reach", mode: "line", series: [{ key: "totalCities", label: "Total cities", color: "#176b63" }, { key: "totalSites", label: "Total sites", color: "#3b7196" }] }
 };
 
+function currentGrowthChartConfig() {
+  const config = GROWTH_CHART_METRICS[growthChartState.metric] || GROWTH_CHART_METRICS.newCustomers;
+  if (growthChartState.metric !== "revenue" || !growthChartState.revenueCumulative) return config;
+  return {
+    ...config,
+    label: "Cumulative revenue",
+    series: config.series.map((series) => ({ ...series, label: "Cumulative revenue" }))
+  };
+}
+
+function displayedGrowthChartPoints() {
+  if (growthChartState.metric !== "revenue" || !growthChartState.revenueCumulative) return growthChartState.points;
+  let cumulativeRevenue = 0;
+  return growthChartState.points.map((point) => ({
+    ...point,
+    periodRevenue: Number(point.revenue) || 0,
+    revenue: (cumulativeRevenue += Number(point.revenue) || 0)
+  }));
+}
+
+function cumulativeRevenueAt(index) {
+  return growthChartState.points.slice(0, index + 1).reduce((sum, point) => sum + (Number(point.revenue) || 0), 0);
+}
+
+function syncGrowthRevenueToggle() {
+  const enabled = growthChartState.metric === "revenue";
+  els.growthRevenueCumulative.disabled = !enabled;
+  els.growthRevenueCumulative.checked = Boolean(growthChartState.revenueCumulative);
+  els.growthRevenueCumulative.closest("label")?.setAttribute("title", enabled ? "Show a running revenue total within the selected reporting window" : "Select Revenue to use cumulative mode");
+}
+
 function showGrowthHistoryChartMessage(message) {
   growthChartState.points = [];
   growthChartState.activeIndex = null;
@@ -986,7 +1018,7 @@ function showGrowthHistoryChartMessage(message) {
 }
 
 function renderGrowthChartLegend() {
-  const config = GROWTH_CHART_METRICS[growthChartState.metric] || GROWTH_CHART_METRICS.newCustomers;
+  const config = currentGrowthChartConfig();
   els.growthChartLegend.replaceChildren();
   config.series.forEach((series) => {
     const item = document.createElement("span");
@@ -1024,9 +1056,10 @@ function formatGrowthAxisPeriod(value) {
 }
 
 function drawGrowthHistoryChart() {
-  const points = growthChartState.points;
-  if (!points.length || els.growthHistoryChartEmpty.classList.contains("hidden") === false) return;
-  const config = GROWTH_CHART_METRICS[growthChartState.metric] || GROWTH_CHART_METRICS.newCustomers;
+  const rawPoints = growthChartState.points;
+  if (!rawPoints.length || els.growthHistoryChartEmpty.classList.contains("hidden") === false) return;
+  const points = displayedGrowthChartPoints();
+  const config = currentGrowthChartConfig();
   const canvas = els.growthHistoryChart;
   const rect = canvas.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return;
@@ -1147,6 +1180,8 @@ function drawGrowthHistoryChart() {
   const peak = Math.max(...values, 0);
   const detail = growthChartState.metric === "reach"
     ? `${formatNumber(points.length)} periods · ${formatGrowthPeriod(first.date)} to ${formatGrowthPeriod(last.date)} · latest ${formatNumber(last.totalCities)} cities and ${formatNumber(last.totalSites)} sites`
+    : growthChartState.metric === "revenue" && growthChartState.revenueCumulative
+      ? `${formatNumber(points.length)} periods · ${formatGrowthPeriod(first.date)} to ${formatGrowthPeriod(last.date)} · ending at ${money(last.revenue, growthChartState.currency)} cumulative revenue within this window`
     : `${formatNumber(points.length)} periods · ${formatGrowthPeriod(first.date)} to ${formatGrowthPeriod(last.date)} · peak ${growthChartValue(peak, config.money)} ${config.label.toLowerCase()}`;
   els.growthHistoryChartDetails.textContent = detail;
   canvas.setAttribute("aria-label", `${config.label} growth history. ${detail}.`);
@@ -1166,11 +1201,20 @@ function updateGrowthHistoryTooltip() {
   const title = document.createElement("strong");
   title.textContent = formatGrowthPeriod(point.date);
   const sales = document.createElement("span");
-  sales.innerHTML = `<b>${escapeHtml(formatNumber(point.newCustomers))}</b> new customers · <b>${escapeHtml(formatNumber(point.orders))}</b> orders · <b>${escapeHtml(money(point.revenue, growthChartState.currency))}</b>`;
+  const cumulativeRevenue = growthChartState.metric === "revenue" && growthChartState.revenueCumulative
+    ? cumulativeRevenueAt(index)
+    : null;
+  const revenueDetail = cumulativeRevenue === null
+    ? `<b>${escapeHtml(money(point.revenue, growthChartState.currency))}</b>`
+    : `<b>${escapeHtml(money(cumulativeRevenue, growthChartState.currency))}</b> cumulative · <b>${escapeHtml(money(point.revenue, growthChartState.currency))}</b> this period`;
+  sales.innerHTML = `<b>${escapeHtml(formatNumber(point.newCustomers))}</b> new customers · <b>${escapeHtml(formatNumber(point.orders))}</b> orders · ${revenueDetail}`;
   const reach = document.createElement("span");
   reach.innerHTML = `<b>${escapeHtml(formatNumber(point.totalCities))}</b> cities (${escapeHtml(formatSignedCount(point.newCities))}) · <b>${escapeHtml(formatNumber(point.totalSites))}</b> sites (${escapeHtml(formatSignedCount(point.newSites))})`;
   tooltip.append(title, sales, reach);
-  els.growthHistoryChartDetails.textContent = `${formatGrowthPeriod(point.date)}: ${formatNumber(point.newCustomers)} new customers, ${formatNumber(point.orders)} paid orders, ${money(point.revenue, growthChartState.currency)}, ${formatNumber(point.totalCities)} total cities (${formatSignedCount(point.newCities)}), and ${formatNumber(point.totalSites)} total sites (${formatSignedCount(point.newSites)}).`;
+  const spokenRevenue = cumulativeRevenue === null
+    ? money(point.revenue, growthChartState.currency)
+    : `${money(cumulativeRevenue, growthChartState.currency)} cumulative revenue, including ${money(point.revenue, growthChartState.currency)} in this period`;
+  els.growthHistoryChartDetails.textContent = `${formatGrowthPeriod(point.date)}: ${formatNumber(point.newCustomers)} new customers, ${formatNumber(point.orders)} paid orders, ${spokenRevenue}, ${formatNumber(point.totalCities)} total cities (${formatSignedCount(point.newCities)}), and ${formatNumber(point.totalSites)} total sites (${formatSignedCount(point.newSites)}).`;
   const tooltipHalfWidth = Math.min(145, Math.max(100, els.growthHistoryChartWrap.clientWidth / 2 - 10));
   tooltip.style.left = `${Math.max(tooltipHalfWidth, Math.min(growthChartState.geometry.width - tooltipHalfWidth, position.x))}px`;
   tooltip.style.top = `${position.y}px`;
@@ -1480,18 +1524,27 @@ function renderAdminLoginAttempts(attempts) {
 }
 
 function drawTrend(data, currency) {
+  let runningRevenue = 0;
+  const points = (Array.isArray(data) ? data : []).map((item) => ({
+    ...item,
+    revenue: dashboardRevenueCumulative
+      ? (runningRevenue += Number(item.revenue) || 0)
+      : Number(item.revenue) || 0
+  }));
+  els.dashboardRevenueModeLabel.textContent = dashboardRevenueCumulative ? "Running total across the last 30 days" : "Revenue earned each day";
+  els.trendChart.setAttribute("aria-label", dashboardRevenueCumulative ? "Cumulative revenue over the last thirty days" : "Daily revenue over the last thirty days");
   const canvas = els.trendChart; const rect = canvas.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(600, Math.round(rect.width * dpr)); canvas.height = Math.max(260, Math.round(rect.height * dpr));
   const ctx = canvas.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); const width = canvas.width / dpr; const height = canvas.height / dpr;
-  ctx.clearRect(0,0,width,height); const pad = { left: 48, right: 14, top: 18, bottom: 35 }; const values = data.map((item) => Number(item.revenue) || 0); const max = Math.max(...values, 1);
+  ctx.clearRect(0,0,width,height); const pad = { left: 48, right: 14, top: 18, bottom: 35 }; const values = points.map((item) => Number(item.revenue) || 0); const max = Math.max(...values, 1);
   ctx.strokeStyle = "rgba(148,163,184,.16)"; ctx.fillStyle = "#96a8c3"; ctx.font = "11px system-ui";
   for (let i=0;i<=4;i++) { const y = pad.top + (height-pad.top-pad.bottom) * i/4; ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(width-pad.right,y); ctx.stroke(); const val=max*(1-i/4); ctx.fillText(compactMoney(val,currency),4,y+4); }
-  if (!data.length) return;
-  const step = (width-pad.left-pad.right)/Math.max(data.length-1,1); const yFor=(v)=>pad.top+(height-pad.top-pad.bottom)*(1-v/max);
+  if (!points.length) return;
+  const step = (width-pad.left-pad.right)/Math.max(points.length-1,1); const yFor=(v)=>pad.top+(height-pad.top-pad.bottom)*(1-v/max);
   const gradient=ctx.createLinearGradient(0,pad.top,0,height-pad.bottom); gradient.addColorStop(0,"rgba(23,107,99,.24)"); gradient.addColorStop(1,"rgba(23,107,99,0)");
-  ctx.beginPath(); data.forEach((item,i)=>{const x=pad.left+i*step,y=yFor(Number(item.revenue)||0); if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}); ctx.lineTo(pad.left+(data.length-1)*step,height-pad.bottom); ctx.lineTo(pad.left,height-pad.bottom); ctx.closePath(); ctx.fillStyle=gradient; ctx.fill();
-  ctx.beginPath(); data.forEach((item,i)=>{const x=pad.left+i*step,y=yFor(Number(item.revenue)||0); if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}); ctx.strokeStyle="#176b63"; ctx.lineWidth=2.5; ctx.stroke();
-  ctx.fillStyle="#96a8c3"; [0,7,14,21,29].filter(i=>data[i]).forEach(i=>{const x=pad.left+i*step; ctx.fillText(new Date(`${data[i].date}T00:00:00`).toLocaleDateString([], {month:"short",day:"numeric"}),x-16,height-10);});
+  ctx.beginPath(); points.forEach((item,i)=>{const x=pad.left+i*step,y=yFor(Number(item.revenue)||0); if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}); ctx.lineTo(pad.left+(points.length-1)*step,height-pad.bottom); ctx.lineTo(pad.left,height-pad.bottom); ctx.closePath(); ctx.fillStyle=gradient; ctx.fill();
+  ctx.beginPath(); points.forEach((item,i)=>{const x=pad.left+i*step,y=yFor(Number(item.revenue)||0); if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}); ctx.strokeStyle="#176b63"; ctx.lineWidth=2.5; ctx.stroke();
+  ctx.fillStyle="#96a8c3"; [0,7,14,21,29].filter(i=>points[i]).forEach(i=>{const x=pad.left+i*step; ctx.fillText(new Date(`${points[i].date}T00:00:00`).toLocaleDateString([], {month:"short",day:"numeric"}),x-16,height-10);});
 }
 
 async function loadOrders() {
@@ -2610,6 +2663,7 @@ initializeTimedOutputs();
 
 els.loginForm.addEventListener("submit",event=>{event.preventDefault();signIn(els.adminCodeInput.value);});
 els.logoutBtn.addEventListener("click",()=>signOut()); els.refreshBtn.addEventListener("click",refreshActive); els.reloadAnalyticsBtn.addEventListener("click",loadAnalytics); els.reloadOrdersBtn.addEventListener("click",loadOrders); els.reloadCodesBtn.addEventListener("click",loadCodes); els.reloadPromosBtn.addEventListener("click",loadPromos); els.reloadFeedbackBtn.addEventListener("click",loadFeedback); els.reloadSupportBtn.addEventListener("click",loadSupport);
+els.dashboardRevenueCumulative.addEventListener("change",()=>{dashboardRevenueCumulative=els.dashboardRevenueCumulative.checked;if(dashboardData)drawTrend(dashboardData.daily||[],dashboardData.summary?.currency||"GBP");});
 els.refreshGrowthBtn.addEventListener("click",loadCurrentAnalyticsView);
 els.growthRange.addEventListener("change",loadCurrentAnalyticsView);
 document.querySelectorAll("[data-paid-analytics-view]").forEach(button=>button.addEventListener("click",()=>openPaidAnalyticsView(button.dataset.paidAnalyticsView)));
@@ -2620,12 +2674,23 @@ document.querySelectorAll("[data-growth-chart-metric]").forEach((button) => butt
     item.classList.toggle("active", item === button);
     item.setAttribute("aria-pressed", String(item === button));
   });
+  syncGrowthRevenueToggle();
   els.growthHistoryTooltip.classList.add("hidden");
   if (growthChartState.points.length) {
     renderGrowthChartLegend();
     drawGrowthHistoryChart();
   }
 }));
+els.growthRevenueCumulative.addEventListener("change", () => {
+  growthChartState.revenueCumulative = els.growthRevenueCumulative.checked;
+  growthChartState.activeIndex = null;
+  els.growthHistoryTooltip.classList.add("hidden");
+  if (growthChartState.points.length) {
+    renderGrowthChartLegend();
+    drawGrowthHistoryChart();
+  }
+});
+syncGrowthRevenueToggle();
 els.growthHistoryChart.addEventListener("pointermove", (event) => {
   const geometry = growthChartState.geometry;
   if (!geometry || !growthChartState.points.length) return;
