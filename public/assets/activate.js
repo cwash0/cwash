@@ -51,11 +51,15 @@ const HEART_RATE_SERVICE_UUID = "0000180d-0000-1000-8000-00805f9b34fb";
 
 const CMD = {
   HANDSHAKE: "[HANDSHAKE:ENABLE]",
+  VERSION: "[VERSION]",
+  COIN_DISABLE: "[COIN:DISABLE:OCCUPIED_LOW]",
   EXEC: "[EXEC]",
 };
 
 const ACK = {
   HANDSHAKE: "[ACK:HANDSHAKE]",
+  VERSION: "[VERSION:",
+  COIN_DISABLE: "[ACK:COIN]",
   ACTIVATE: "[ACK:ACTIVATE]",
   EXEC: "[ACK:EXEC]",
 };
@@ -1695,6 +1699,28 @@ async function sendHandshakeWithRetry() {
   };
 }
 
+async function sendOptionalCompatibilityCommand(command, expectedAck) {
+  try {
+    return await sendAndObserve(command, expectedAck, 1200);
+  } catch (error) {
+    if (error?.code !== "machine_error") throw error;
+    return { acknowledged: false, response: String(error.response || ""), rejected: true };
+  }
+}
+
+async function sendCompatibilitySetupIfNeeded(handshake) {
+  if (handshake?.acknowledged) {
+    return { attempted: false, versionAcknowledged: false, coinAcknowledged: false };
+  }
+  const version = await sendOptionalCompatibilityCommand(CMD.VERSION, ACK.VERSION);
+  const coin = await sendOptionalCompatibilityCommand(CMD.COIN_DISABLE, ACK.COIN_DISABLE);
+  return {
+    attempted: true,
+    versionAcknowledged: version.acknowledged,
+    coinAcknowledged: coin.acknowledged
+  };
+}
+
 async function enableRxNotifications() {
   if (rxChar) return;
   if (!service) throw new Error("Bluetooth service not ready");
@@ -1859,6 +1885,9 @@ async function runSequence(machine, cycleKey) {
     stage = "handshake";
     bluetoothFailureStage = stage;
     const handshake = await sendHandshakeWithRetry();
+    stage = "compatibility_setup";
+    bluetoothFailureStage = stage;
+    const compatibility = await sendCompatibilitySetupIfNeeded(handshake);
     setActivity("Authorising start", "Preparing secure command", "warn");
     stage = "authorization";
     bluetoothFailureStage = stage;
@@ -1879,7 +1908,7 @@ async function runSequence(machine, cycleKey) {
     if (!confirmation.confirmed) {
       const allowanceProtected = Boolean(activationId);
       const error = new Error(
-        `Machine start unconfirmed (handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
+        `Machine start unconfirmed (notifications=${Boolean(rxChar)}, handshake_ack=${handshake.acknowledged}, compatibility=${compatibility.attempted}, version_ack=${compatibility.versionAcknowledged}, coin_ack=${compatibility.coinAcknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
       );
       error.code = "activation_unconfirmed";
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });
@@ -1917,7 +1946,7 @@ async function runSequence(machine, cycleKey) {
     preserveSuccessDisconnectUI = false;
     await cancelPreparedActivation(activationId, e?.code || stage);
     const limitReached = e?.code === "weekly_limit_reached";
-    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution", "confirmation"].includes(stage)) {
+    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "compatibility_setup", "activation", "execution", "confirmation"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error: e, machine });
     }
     if (limitReached) {

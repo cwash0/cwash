@@ -19,10 +19,14 @@ const ANALYTICS_VISITOR_KEY = "laundryAnalyticsVisitor";
 const ANALYTICS_SESSION_KEY = "laundryAnalyticsSession";
 const CMD = {
   HANDSHAKE: "[HANDSHAKE:ENABLE]",
+  VERSION: "[VERSION]",
+  COIN_DISABLE: "[COIN:DISABLE:OCCUPIED_LOW]",
   EXEC: "[EXEC]"
 };
 const ACK = {
   HANDSHAKE: "[ACK:HANDSHAKE]",
+  VERSION: "[VERSION:",
+  COIN_DISABLE: "[ACK:COIN]",
   ACTIVATE: "[ACK:ACTIVATE]",
   EXEC: "[ACK:EXEC]"
 };
@@ -1059,6 +1063,21 @@ async function sendHandshakeWithRetry() {
   };
 }
 
+async function sendOptionalCompatibilityCommand(command, expectedAck) {
+  try {
+    return await sendAndObserve(command, expectedAck, 1200);
+  } catch (error) {
+    if (error?.code !== "machine_error") throw error;
+    return { acknowledged: false, response: String(error.response || ""), rejected: true };
+  }
+}
+
+async function sendCompatibilitySetupIfNeeded(handshake) {
+  if (handshake?.acknowledged) return;
+  await sendOptionalCompatibilityCommand(CMD.VERSION, ACK.VERSION);
+  await sendOptionalCompatibilityCommand(CMD.COIN_DISABLE, ACK.COIN_DISABLE);
+}
+
 async function enableRxNotifications() {
   if (rxChar) return;
   if (!service) throw new Error("Bluetooth service not ready");
@@ -1233,7 +1252,10 @@ async function startMachine(machine, cycleKey, label) {
     await tryEnableRxNotifications(machine);
     stage = "handshake";
     bluetoothFailureStage = stage;
-    await sendHandshakeWithRetry();
+    const handshake = await sendHandshakeWithRetry();
+    stage = "compatibility_setup";
+    bluetoothFailureStage = stage;
+    await sendCompatibilitySetupIfNeeded(handshake);
     stage = "authorization";
     bluetoothFailureStage = stage;
     const prepared = await api("prepare_activation", { machineId: machineKey(machine), cycleKey });
@@ -1271,7 +1293,7 @@ async function startMachine(machine, cycleKey, label) {
       bluetoothFailureStage = isConnected() ? "connected" : "idle";
       return;
     }
-    if (!unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution"].includes(stage)) {
+    if (!unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "compatibility_setup", "activation", "execution"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });
     }
     if (isConnected()) await disconnect("sequence-error");
