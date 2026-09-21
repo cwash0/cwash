@@ -195,6 +195,7 @@ let service = null;
 let rxChar = null;
 let txChar = null;
 let notificationText = "";
+let lastWriteMode = "";
 let machinePickerReturnFocus = null;
 
 function normaliseAccessCode(value) {
@@ -1647,16 +1648,25 @@ function onNotify(event) {
 async function writeAscii(text) {
   if (!txChar) throw new Error("TX characteristic not ready");
   const bytes = enc.encode(text);
-  if (txChar.properties?.write) {
-    if (typeof txChar.writeValueWithResponse === "function") {
-      await txChar.writeValueWithResponse(bytes);
-      return;
-    }
-    await txChar.writeValue(bytes);
+
+  // These controllers historically receive their state-machine commands as
+  // GATT Write Commands. Some firmware advertises both write modes but does
+  // not process Write Requests consistently, so preserve the proven
+  // without-response transport and only fall back when it is unavailable.
+  if (typeof txChar.writeValueWithoutResponse === "function") {
+    await txChar.writeValueWithoutResponse(bytes);
+    lastWriteMode = "without_response";
     return;
   }
-  try { await txChar.writeValueWithoutResponse(bytes); }
-  catch { await txChar.writeValue(bytes); }
+
+  if (typeof txChar.writeValueWithResponse === "function") {
+    await txChar.writeValueWithResponse(bytes);
+    lastWriteMode = "with_response";
+    return;
+  }
+
+  await txChar.writeValue(bytes);
+  lastWriteMode = "legacy_write";
 }
 
 async function sendAndObserve(text, expectedAck, waitMs) {
@@ -1868,7 +1878,7 @@ async function runSequence(machine, cycleKey) {
     if (!confirmation.confirmed) {
       const allowanceProtected = Boolean(activationId);
       const error = new Error(
-        `Machine start unconfirmed (notifications=${Boolean(rxChar)}, handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
+        `Machine start unconfirmed (notifications=${Boolean(rxChar)}, write_mode=${lastWriteMode || "unknown"}, handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
       );
       error.code = "activation_unconfirmed";
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });

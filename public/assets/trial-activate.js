@@ -1012,15 +1012,21 @@ function onNotify(event) {
 async function writeMachineCommand(command) {
   if (!txChar) throw new Error("Machine connection is not ready");
   const bytes = enc.encode(command);
-  if (txChar.properties?.write) {
-    if (typeof txChar.writeValueWithResponse === "function") {
-      await txChar.writeValueWithResponse(bytes);
-      return;
-    }
-    await txChar.writeValue(bytes);
+
+  // Match the controller's established command transport. Firmware that
+  // advertises both modes may ignore state-machine commands sent as Write
+  // Requests, while Write Commands are handled correctly.
+  if (typeof txChar.writeValueWithoutResponse === "function") {
+    await txChar.writeValueWithoutResponse(bytes);
     return;
   }
-  try { await txChar.writeValueWithoutResponse(bytes); } catch (_) { await txChar.writeValue(bytes); }
+
+  if (typeof txChar.writeValueWithResponse === "function") {
+    await txChar.writeValueWithResponse(bytes);
+    return;
+  }
+
+  await txChar.writeValue(bytes);
 }
 
 async function sendAndObserve(command, expectedAck, waitMs) {
