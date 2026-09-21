@@ -1683,18 +1683,6 @@ async function sendAndObserve(text, expectedAck, waitMs) {
   throw error;
 }
 
-async function sendHandshakeWithRetry() {
-  let observation = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1200);
-  if (!rxChar || observation.acknowledged || !isConnected()) return observation;
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  const retry = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1500);
-  return {
-    acknowledged: retry.acknowledged,
-    response: [observation.response, retry.response].filter(Boolean).join("\n"),
-    attempts: 2
-  };
-}
-
 async function enableRxNotifications() {
   if (rxChar) return;
   if (!service) throw new Error("Bluetooth service not ready");
@@ -1856,18 +1844,19 @@ async function runSequence(machine, cycleKey) {
     bluetoothFailureStage = stage;
     resetRx();
     await tryEnableRxNotifications(machine);
-    stage = "handshake";
-    bluetoothFailureStage = stage;
-    const handshake = await sendHandshakeWithRetry();
     setActivity("Authorising start", "Preparing secure command", "warn");
     stage = "authorization";
     bluetoothFailureStage = stage;
+    // Keep network latency outside the controller's timing-sensitive command window.
     const prepared = await requestActivationCommand(machine, cycleKey);
     activationId = prepared.activationId;
     let activateCmd = prepared.command;
+    stage = "handshake";
+    bluetoothFailureStage = stage;
+    const handshake = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1000);
     stage = "activation";
     bluetoothFailureStage = stage;
-    const activation = await sendAndObserve(activateCmd, ACK.ACTIVATE, 1200);
+    const activation = await sendAndObserve(activateCmd, ACK.ACTIVATE, 1000);
     activateCmd = "";
     stage = "execution";
     bluetoothFailureStage = stage;

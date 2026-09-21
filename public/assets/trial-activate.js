@@ -1047,18 +1047,6 @@ async function sendAndObserve(command, expectedAck, waitMs) {
   throw error;
 }
 
-async function sendHandshakeWithRetry() {
-  const observation = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1200);
-  if (!rxChar || observation.acknowledged || !isConnected()) return observation;
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  const retry = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1500);
-  return {
-    acknowledged: retry.acknowledged,
-    response: [observation.response, retry.response].filter(Boolean).join("\n"),
-    attempts: 2
-  };
-}
-
 async function enableRxNotifications() {
   if (rxChar) return;
   if (!service) throw new Error("Bluetooth service not ready");
@@ -1231,17 +1219,18 @@ async function startMachine(machine, cycleKey, label) {
     bluetoothFailureStage = stage;
     resetMessages();
     await tryEnableRxNotifications(machine);
-    stage = "handshake";
-    bluetoothFailureStage = stage;
-    await sendHandshakeWithRetry();
     stage = "authorization";
     bluetoothFailureStage = stage;
+    // Prepare first so the timed BLE sequence has no network request in the middle.
     const prepared = await api("prepare_activation", { machineId: machineKey(machine), cycleKey });
     stage = "prepared";
     context = { ...context, activation: { id: prepared.activationId, status: prepared.activationStatus, preparedAt: prepared.preparedAt } };
+    stage = "handshake";
+    bluetoothFailureStage = stage;
+    await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1000);
     stage = "activation";
     bluetoothFailureStage = stage;
-    await sendAndObserve(String(prepared.activationCommand), ACK.ACTIVATE, 1200);
+    await sendAndObserve(String(prepared.activationCommand), ACK.ACTIVATE, 1000);
     stage = "execution";
     bluetoothFailureStage = stage;
     await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
