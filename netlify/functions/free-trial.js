@@ -3,23 +3,10 @@ const fs = require("fs");
 const path = require("path");
 const { pool } = require("./_db");
 const { getSiteById } = require("./_site-data");
+const { getActivateCommand } = require("./_machine-command");
 
 const TRIAL_SETTING_KEY = "homepage_free_trial_enabled";
 const TRIAL_SITE_LIMITS_KEY = "free_trial_site_weekly_limits";
-const WASHER_CYCLE_PULSES = {
-  standardEco: 1,
-  extraWash: 2,
-  extraWashRinse: 3,
-  standard: 1,
-  extra: 2,
-  extraRinse: 3,
-  full: 3
-};
-const DEFAULT_WASHER_CYCLES = {
-  standardEco: "Standard Eco",
-  extraWash: "Extra Wash",
-  extraWashRinse: "Extra Wash + Rinse"
-};
 
 let schemaReady = false;
 let schemaReadyPromise = null;
@@ -573,35 +560,9 @@ function machineKey(machine) {
   return String(machine?.id || machine?.name || "").trim();
 }
 
-function getMachineCycles(machine) {
-  const cycles = machine?.cycles && typeof machine.cycles === "object" && !Array.isArray(machine.cycles) ? machine.cycles : {};
-  if (String(machine?.type || "").toLowerCase() === "washer" && Object.keys(cycles).length === 1 && cycles.full) {
-    return DEFAULT_WASHER_CYCLES;
-  }
-  return cycles;
-}
-
 function findMachine(machines, machineId) {
   const requestedId = String(machineId || "").trim();
   return (Array.isArray(machines) ? machines : []).find((machine) => machineKey(machine) === requestedId) || null;
-}
-
-function getActivateCommand(machine, cycleKey) {
-  const type = String(machine?.type || "").toLowerCase().trim();
-  const password = String(machine?.password || "").trim();
-  const key = String(cycleKey || "").trim();
-  if (!password || !Object.prototype.hasOwnProperty.call(getMachineCycles(machine), key)) return "";
-  if (type === "washer") {
-    const pulses = WASHER_CYCLE_PULSES[key];
-    return pulses ? `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00000032:${hex(pulses, 4)}:${password}]` : "";
-  }
-  if (type === "dryer" && key === "full") return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00000032:0004:${password}]`;
-  if (type === "dryer" && key === "min15") return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00:0001:${password}]`;
-  return "";
-}
-
-function hex(value, width) {
-  return Number(value).toString(16).toUpperCase().padStart(width, "0");
 }
 
 function json(value, statusCode = 200) {

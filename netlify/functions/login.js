@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { pool } = require("./_db");
+const { getActivateCommand } = require("./_machine-command");
 
 let cachedSiteMap = null;
 let cachedSiteIndex = null;
@@ -209,47 +210,8 @@ function sanitizeMachines(machines) {
     .map(({ hasPassword, ...machine }) => machine);
 }
 
-const WASHER_CYCLE_PULSES = {
-  standardEco: 1,
-  extraWash: 2,
-  extraWashRinse: 3,
-  standard: 1,
-  extra: 2,
-  extraRinse: 3,
-  full: 3
-};
-
-const DEFAULT_WASHER_CYCLES = {
-  standardEco: "Standard Eco",
-  extraWash: "Extra Wash",
-  extraWashRinse: "Extra Wash + Rinse"
-};
-function hex(value, width) {
-  return Number(value).toString(16).toUpperCase().padStart(width, "0");
-}
-
 function getMachineKey(machine) {
   return String(machine?.id || machine?.name || "").trim();
-}
-
-function getMachineCycles(machine) {
-  const configuredCycles = (
-    machine?.cycles &&
-    typeof machine.cycles === "object" &&
-    !Array.isArray(machine.cycles)
-  )
-    ? machine.cycles
-    : {};
-
-  if (
-    String(machine?.type || "").toLowerCase().trim() === "washer" &&
-    Object.keys(configuredCycles).length === 1 &&
-    configuredCycles.full
-  ) {
-    return DEFAULT_WASHER_CYCLES;
-  }
-
-  return configuredCycles;
 }
 
 function findMachineForActivation(machines, machineId) {
@@ -259,34 +221,6 @@ function findMachineForActivation(machines, machineId) {
   return (Array.isArray(machines) ? machines : [])
     .filter((machine) => machine && typeof machine === "object")
     .find((machine) => getMachineKey(machine) === requestedId) || null;
-}
-
-function getActivateCommand(machine, cycleKey) {
-  const type = String(machine?.type || "").toLowerCase().trim();
-  const password = String(machine?.password || "").trim();
-  const key = String(cycleKey || "").trim();
-  const cycles = getMachineCycles(machine);
-
-  if (!password || !Object.prototype.hasOwnProperty.call(cycles, key)) {
-    return "";
-  }
-
-  if (type === "washer") {
-    const pulses = WASHER_CYCLE_PULSES[key];
-    if (!pulses) return "";
-    return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00000032:${hex(pulses, 4)}:${password}]`;
-  }
-
-  if (type === "dryer") {
-    if (key === "full") {
-      return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00000032:0004:${password}]`;
-    }
-    if (key === "min15") {
-      return `[ACTIVATE:01:PULSE:OCCUPIED_LOW:00000000:00000032:00:0001:${password}]`;
-    }
-  }
-
-  return "";
 }
 
 function getWeekStartUTC(date = new Date()) {
