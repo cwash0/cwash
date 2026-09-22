@@ -3,7 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const { pool } = require("./_db");
 const { getSiteById } = require("./_site-data");
-const { getActivateCommand } = require("./_machine-command");
+const { getActivateCommand, getMachineCycles } = require("./_machine-command");
 
 const TRIAL_SETTING_KEY = "homepage_free_trial_enabled";
 const TRIAL_SITE_LIMITS_KEY = "free_trial_site_weekly_limits";

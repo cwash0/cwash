@@ -1468,7 +1468,7 @@ async function getCodeUsageHistory(body = {}) {
   );
   if (!accessResult.rows[0]) throw new AdminError("Code not found.", 404, "code_not_found");
 
-  const [historyResult, weeklyResult] = await Promise.all([
+  const [historyResult, weeklyResult, attemptResult] = await Promise.all([
     pool.query(
       `
         select id, site_id, machine_id, machine_name, machine_type,
@@ -1493,6 +1493,19 @@ async function getCodeUsageHistory(body = {}) {
           `,
           [code]
         )
+      : { rows: [] }),
+    tableExists("code_activation_attempts").then((exists) => exists
+      ? pool.query(
+          `
+            select activation_id, site_id, machine_id, cycle_key,
+                   status, prepared_at, cancelled_at, cancel_reason
+            from code_activation_attempts
+            where code = $1 and status in ('pending', 'cancelled')
+            order by prepared_at desc
+            limit 25
+          `,
+          [code]
+        )
       : { rows: [] })
   ]);
 
@@ -1507,6 +1520,16 @@ async function getCodeUsageHistory(body = {}) {
       cycleKey: row.cycle_key,
       cycleLabel: row.cycle_label,
       recordedAt: row.recorded_at
+    })),
+    unrecordedAttempts: attemptResult.rows.map((row) => ({
+      activationId: row.activation_id,
+      siteId: row.site_id,
+      machineId: row.machine_id,
+      cycleKey: row.cycle_key,
+      status: row.status,
+      preparedAt: row.prepared_at,
+      cancelledAt: row.cancelled_at || null,
+      cancelReason: row.cancel_reason || ""
     })),
     weeks: weeklyResult.rows.map((row) => ({
       weekStart: row.week_start,

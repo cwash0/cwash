@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { pool } = require("./_db");
-const { getActivateCommand } = require("./_machine-command");
+const { getActivateCommand, getMachineCycles } = require("./_machine-command");
 
 let cachedSiteMap = null;
 let cachedSiteIndex = null;
@@ -735,6 +735,7 @@ exports.handler = async (event) => {
       const usage = await getWeeklyUsage(code, weeklyLimit, maxTotalUses || (deleteAfterUse ? 1 : null));
       return json({
         ok: true,
+        activationProtocol: "deferred_v1",
         siteId,
         siteName: String(entry.siteName || "Site"),
         machines: sanitizeMachines(entry.machines),
@@ -772,6 +773,9 @@ exports.handler = async (event) => {
 
     if (action === "complete_activation") {
       const activationId = String(body.activationId || "").trim();
+      if (body.requireUsageRecord === true && !activationId) {
+        return json({ ok: false, error: "missing_activation_id" }, 400);
+      }
       if (activationId) {
         const result = await completeActivationAttempt({
           activationId,
@@ -887,6 +891,7 @@ exports.handler = async (event) => {
     return json(
       {
         ok: true,
+        activationProtocol: "deferred_v1",
         siteId: mapping.site_id,
         siteName: String(entry.siteName || "Site"),
         machines: sanitizeMachines(entry.machines),

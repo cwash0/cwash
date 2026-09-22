@@ -1942,6 +1942,7 @@ async function openCodeUsageHistory(code,returnFocus){
 function renderCodeUsageHistory(code,data){
   const history=Array.isArray(data.history)?data.history:[];
   const weeks=Array.isArray(data.weeks)?data.weeks:[];
+  const unrecordedAttempts=Array.isArray(data.unrecordedAttempts)?data.unrecordedAttempts:[];
   const totalUses=Number(code.uses||0);
   els.codeUsageSummary.textContent=`${formatNumber(history.length)} detailed machine use ${history.length===1?"record":"records"} · ${formatNumber(totalUses)} total recorded ${totalUses===1?"activation":"activations"}`;
   els.codeUsageHistoryRows.innerHTML="";
@@ -1958,8 +1959,17 @@ function renderCodeUsageHistory(code,data){
     });
   }
   const missingDetail=Math.max(0,totalUses-history.length);
+  const notes=[];
   if(missingDetail>0){
-    els.codeUsageHistoryNote.textContent=`${formatNumber(missingDetail)} earlier ${missingDetail===1?"activation has":"activations have"} weekly totals only. Exact machine and cycle details are recorded for new uses from now on.`;
+    notes.push(`${formatNumber(missingDetail)} earlier ${missingDetail===1?"activation has":"activations have"} weekly totals only. Exact machine and cycle details are recorded for new uses from now on.`);
+  }
+  if(unrecordedAttempts.length){
+    const pending=unrecordedAttempts.filter((item)=>item.status==="pending").length;
+    const cancelled=unrecordedAttempts.length-pending;
+    notes.push(`${formatNumber(unrecordedAttempts.length)} recent prepared ${unrecordedAttempts.length===1?"attempt was":"attempts were"} not recorded (${formatNumber(pending)} pending, ${formatNumber(cancelled)} cancelled). Preparation alone does not prove a machine started.`);
+  }
+  if(notes.length){
+    els.codeUsageHistoryNote.textContent=notes.join(" ");
     els.codeUsageHistoryNote.classList.remove("hidden");
   }
   els.codeUsageWeekRows.innerHTML="";

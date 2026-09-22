@@ -85,5 +85,6 @@ function getActivateCommand(machine, cycleKey) {
 module.exports = {
   AC_DETECT_LABELS,
   constructBleCommand,
-  getActivateCommand
+  getActivateCommand,
+  getMachineCycles
 };

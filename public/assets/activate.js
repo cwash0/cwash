@@ -6,6 +6,7 @@ let connectedDeviceName = "";
 let lastStartedMachineLabel = "";
 let cycleCooldownTimer = null;
 let activeAccessCode = "";
+let activationProtocol = "";
 let weeklyUsage = { limit: 4, used: 0, remaining: 4, resetAt: "" };
 let machinesInUse = new Set();
 let preserveSuccessDisconnectUI = false;
@@ -31,6 +32,7 @@ let bluetoothFailureStage = "idle";
 let unexpectedBluetoothDisconnectReported = false;
 
 const ACTIVATE_SESSION_KEY = "laundryActivateAccessCode";
+const PENDING_ACTIVATION_KEY = "laundryPendingActivationCompletion";
 const PURCHASE_STORAGE_KEY = "laundryAccessPurchase";
 const ACTIVATE_LOGGED_OUT_CODE_KEY = "laundryActivateLoggedOutCode";
 const BLUEFY_APP_STORE_URL = "https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055";
@@ -472,6 +474,7 @@ async function changeActivationSite(site, button) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok || data.ok === false) throw new Error(data.error || "Site could not be changed");
 
+    activationProtocol = String(data.activationProtocol || "");
     MACHINES = Array.isArray(data.machines) ? data.machines : [];
     selectedMachineKey = MACHINES.length ? getMachineKey(MACHINES[0]) : "";
     connectedDeviceName = "";
@@ -1274,6 +1277,7 @@ async function tryUnlock({ code = "", silent = false } = {}) {
   }
 
   try {
+    await recoverPendingActivationCompletion(entered);
     const res = await fetch("/.netlify/functions/login", {
       method: "POST",
       cache: "no-store",
@@ -1286,6 +1290,7 @@ async function tryUnlock({ code = "", silent = false } = {}) {
 
       resetUpgradePanel();
       activeAccessCode = entered;
+      activationProtocol = String(data?.activationProtocol || "");
       try { localStorage.setItem(ACTIVATE_SESSION_KEY, entered); } catch (_) {}
       try { sessionStorage.removeItem(ACTIVATE_LOGGED_OUT_CODE_KEY); } catch (_) {}
       MACHINES = Array.isArray(data?.machines) ? data.machines : [];
@@ -1315,10 +1320,14 @@ async function tryUnlock({ code = "", silent = false } = {}) {
       setStatus(MACHINES.length ? `ready to connect (${MACHINES[0].name})` : "no machines loaded");
       setActivity("Ready");
       unlockApp();
+      if (pendingActivationCompletions().some((item) => item.code === entered)) {
+        setActivity("Usage logging pending", "A previous start has not been recorded yet. Contact support before trying it again.", "warn");
+      }
       return true;
     }
 
     activeAccessCode = "";
+    activationProtocol = "";
     resetUpgradePanel();
 
     if (res.status === 401 || res.status === 404 || res.status === 410) {
@@ -1348,6 +1357,7 @@ async function tryUnlock({ code = "", silent = false } = {}) {
     return false;
   } catch (e) {
     activeAccessCode = "";
+    activationProtocol = "";
     resetUpgradePanel();
     if (silent) showPinLogin({ focus: false, clearInput: true });
     else els.pinSub.textContent = "Enter your code to access machine controls.";
@@ -1427,6 +1437,7 @@ async function logoutApp() {
     if (activeAccessCode) sessionStorage.setItem(ACTIVATE_LOGGED_OUT_CODE_KEY, activeAccessCode);
   } catch (_) {}
   activeAccessCode = "";
+  activationProtocol = "";
   resetUpgradePanel();
   iosBluefyPromptRequested = false;
   MACHINES = [];
@@ -1753,6 +1764,11 @@ async function refreshWeeklyUsage() {
 async function requestActivationCommand(machine, cycleKey) {
   if (!activeAccessCode) throw new Error("No active access code");
   if (!machine) throw new Error("No machine selected");
+  if (activationProtocol !== "deferred_v1") {
+    const error = new Error("Machine starts cannot be tracked right now. Refresh the page before trying again.");
+    error.code = "activation_tracking_unavailable";
+    throw error;
+  }
 
   const res = await fetch("/.netlify/functions/login", {
     method: "POST",
@@ -1790,15 +1806,60 @@ async function requestActivationCommand(machine, cycleKey) {
     throw new Error(data.error || `Activation request failed (${res.status})`);
   }
 
+  const activationId = String(data.activationId || "").trim();
+  if (!activationId) {
+    const error = new Error("The server did not provide a usage record. Refresh the page before trying again.");
+    error.code = "activation_tracking_unavailable";
+    throw error;
+  }
   updateWeeklyUsageFromData(data);
   return {
     command: String(data.activationCommand),
-    activationId: String(data.activationId || "")
+    activationId
   };
 }
 
-async function completeConfirmedActivation(activationId, machine, cycleKey) {
-  if (!activeAccessCode || !activationId) return;
+function rememberPendingActivation(activationId, machine, cycleKey) {
+  try {
+    const pending = pendingActivationCompletions().filter((item) => item.activationId !== activationId);
+    pending.push({
+      code: activeAccessCode,
+      activationId,
+      machineId: getMachineKey(machine),
+      cycleKey
+    });
+    localStorage.setItem(PENDING_ACTIVATION_KEY, JSON.stringify(pending));
+  } catch (_) {}
+}
+
+function pendingActivationCompletions() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PENDING_ACTIVATION_KEY) || "null");
+    return (Array.isArray(value) ? value : value ? [value] : []).filter((item) => item && item.code && item.activationId);
+  } catch (_) { return []; }
+}
+
+function clearPendingActivation(activationId) {
+  try {
+    const pending = pendingActivationCompletions().filter((item) => item.activationId !== activationId);
+    if (pending.length) localStorage.setItem(PENDING_ACTIVATION_KEY, JSON.stringify(pending));
+    else localStorage.removeItem(PENDING_ACTIVATION_KEY);
+  } catch (_) {}
+}
+
+async function recoverPendingActivationCompletion(code) {
+  for (const pending of pendingActivationCompletions().filter((item) => item.code === code && item.machineId)) {
+    try {
+      await completeConfirmedActivation(pending.activationId, { id: pending.machineId }, pending.cycleKey, code);
+      clearPendingActivation(pending.activationId);
+    } catch (error) {
+      console.warn("[activate] pending usage completion remains unconfirmed:", error?.message || error);
+    }
+  }
+}
+
+async function completeConfirmedActivation(activationId, machine, cycleKey, code = activeAccessCode) {
+  if (!code || !activationId) throw new Error("Activation cannot be recorded without its access code and ID.");
   let lastError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -1808,14 +1869,18 @@ async function completeConfirmedActivation(activationId, machine, cycleKey) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "complete_activation",
-          code: activeAccessCode,
+          code,
           activationId,
+          requireUsageRecord: true,
           machineId: getMachineKey(machine),
           cycleKey
         })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) throw new Error(data.error || `Activation completion failed (${res.status})`);
+      if (data.allowed !== true || String(data.activationId || "") !== activationId || !Number.isFinite(Number(data.totalUsed)) || Number(data.totalUsed) < 1) {
+        throw new Error("The server did not confirm that this machine use was recorded.");
+      }
       updateWeeklyUsageFromData(data);
       return;
     } catch (error) {
@@ -1870,9 +1935,11 @@ async function runSequence(machine, cycleKey) {
     // stack, record the start. Occupancy can update late (or be unreadable on
     // some controllers), so it must not decide whether real usage is logged.
     stage = "execution-sent";
+    rememberPendingActivation(activationId, machine, cycleKey);
     stage = "completion";
     bluetoothFailureStage = stage;
     await completeConfirmedActivation(activationId, machine, cycleKey);
+    clearPendingActivation(activationId);
     activationId = "";
 
     preserveSuccessDisconnectUI = true;
@@ -1892,6 +1959,7 @@ async function runSequence(machine, cycleKey) {
     const startMayHaveBeenSent = ["execution-sent", "completion"].includes(stage);
     if (!startMayHaveBeenSent) await cancelPreparedActivation(activationId, e?.code || stage);
     const limitReached = e?.code === "weekly_limit_reached";
+    const trackingUnavailable = e?.code === "activation_tracking_unavailable";
     if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error: e, machine });
     }
@@ -1901,14 +1969,14 @@ async function runSequence(machine, cycleKey) {
     } else {
       setActivity(
         startMayHaveBeenSent ? "Start sent" : "Could not start",
-        startMayHaveBeenSent ? "The machine may have started, but usage logging could not be confirmed." : "Reconnect and try again.",
+        startMayHaveBeenSent ? "The machine may have started, but usage logging could not be confirmed." : trackingUnavailable ? e.message : "Reconnect and try again.",
         "warn"
       );
     }
     if (isConnected()) await disconnect("sequence-error");
     setStatus(
-      limitReached ? "Weekly limit reached" : startMayHaveBeenSent ? "Start sent; logging unconfirmed" : `Couldn’t start ${machine?.name || "machine"}`,
-      limitReached || startMayHaveBeenSent ? "warn" : "bad"
+      limitReached ? "Weekly limit reached" : startMayHaveBeenSent ? "Start sent; logging unconfirmed" : trackingUnavailable ? "Usage tracking unavailable" : `Couldn’t start ${machine?.name || "machine"}`,
+      limitReached || startMayHaveBeenSent || trackingUnavailable ? "warn" : "bad"
     );
   }
   bluetoothFailureStage = isConnected() ? "connected" : "idle";
