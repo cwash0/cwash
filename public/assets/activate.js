@@ -59,7 +59,6 @@ const ACK = {
   ACTIVATE: "[ACK:ACTIVATE]",
   EXEC: "[ACK:EXEC]",
 };
-const START_CONFIRMATION_DELAYS_MS = [600, 1000, 1500, 2200, 3000];
 
 function mountUpgradePaymentSheet() {
   const host = document.getElementById("upgradePaymentHost");
@@ -195,7 +194,6 @@ let service = null;
 let rxChar = null;
 let txChar = null;
 let notificationText = "";
-let lastWriteMode = "";
 let machinePickerReturnFocus = null;
 
 function normaliseAccessCode(value) {
@@ -1655,18 +1653,15 @@ async function writeAscii(text) {
   // without-response transport and only fall back when it is unavailable.
   if (typeof txChar.writeValueWithoutResponse === "function") {
     await txChar.writeValueWithoutResponse(bytes);
-    lastWriteMode = "without_response";
     return;
   }
 
   if (typeof txChar.writeValueWithResponse === "function") {
     await txChar.writeValueWithResponse(bytes);
-    lastWriteMode = "with_response";
     return;
   }
 
   await txChar.writeValue(bytes);
-  lastWriteMode = "legacy_write";
 }
 
 async function sendAndObserve(text, expectedAck, waitMs) {
@@ -1863,38 +1858,18 @@ async function runSequence(machine, cycleKey) {
     let activateCmd = prepared.command;
     stage = "handshake";
     bluetoothFailureStage = stage;
-    const handshake = await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1000);
+    await sendAndObserve(CMD.HANDSHAKE, ACK.HANDSHAKE, 1000);
     stage = "activation";
     bluetoothFailureStage = stage;
-    const activation = await sendAndObserve(activateCmd, ACK.ACTIVATE, 1000);
+    await sendAndObserve(activateCmd, ACK.ACTIVATE, 1000);
     activateCmd = "";
     stage = "execution";
     bluetoothFailureStage = stage;
-    const execution = await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
-    stage = "confirmation";
-    bluetoothFailureStage = stage;
-    setActivity("Confirming start", `${machine.name} is responding`, "warn");
-    const confirmation = await confirmSelectedMachineStarted();
-    if (!confirmation.confirmed) {
-      const allowanceProtected = Boolean(activationId);
-      const error = new Error(
-        `Machine start unconfirmed (notifications=${Boolean(rxChar)}, write_mode=${lastWriteMode || "unknown"}, handshake_ack=${handshake.acknowledged}, activation_ack=${activation.acknowledged}, execution_ack=${execution.acknowledged}, occupancy=${confirmation.reason})`
-      );
-      error.code = "activation_unconfirmed";
-      reportBluetoothFailure("bluetooth_activation_failed", { stage, error, machine });
-      await cancelPreparedActivation(activationId, confirmation.reason);
-      activationId = "";
-      await disconnect("sequence-unconfirmed");
-      setStatus(`${machine?.name || "Machine"} start unconfirmed`, "warn");
-      setActivity(
-        "Start unconfirmed",
-        allowanceProtected
-          ? "Check the machine before trying again. No activation was used."
-          : "Check the machine before trying again and review your remaining activations.",
-        "warn"
-      );
-      return;
-    }
+    await sendAndObserve(CMD.EXEC, ACK.EXEC, 2000);
+    // Once the final command has been accepted by the browser's Bluetooth
+    // stack, record the start. Occupancy can update late (or be unreadable on
+    // some controllers), so it must not decide whether real usage is logged.
+    stage = "execution-sent";
     stage = "completion";
     bluetoothFailureStage = stage;
     await completeConfirmedActivation(activationId, machine, cycleKey);
@@ -1914,19 +1889,27 @@ async function runSequence(machine, cycleKey) {
     setTimeout(() => window.LaundryFeedbackPrompt?.maybeShow(), 2200);
   } catch (e) {
     preserveSuccessDisconnectUI = false;
-    await cancelPreparedActivation(activationId, e?.code || stage);
+    const startMayHaveBeenSent = ["execution-sent", "completion"].includes(stage);
+    if (!startMayHaveBeenSent) await cancelPreparedActivation(activationId, e?.code || stage);
     const limitReached = e?.code === "weekly_limit_reached";
-    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution", "confirmation"].includes(stage)) {
+    if (!limitReached && !unexpectedBluetoothDisconnectReported && ["rx_notifications", "handshake", "activation", "execution"].includes(stage)) {
       reportBluetoothFailure("bluetooth_activation_failed", { stage, error: e, machine });
     }
     if (limitReached) {
       const [main, sub] = usageLimitActivityText();
       setActivity(main, sub, "warn");
     } else {
-      setActivity("Could not start", "Reconnect and try again.", "warn");
+      setActivity(
+        startMayHaveBeenSent ? "Start sent" : "Could not start",
+        startMayHaveBeenSent ? "The machine may have started, but usage logging could not be confirmed." : "Reconnect and try again.",
+        "warn"
+      );
     }
     if (isConnected()) await disconnect("sequence-error");
-    setStatus(limitReached ? "Weekly limit reached" : `Couldn’t start ${machine?.name || "machine"}`, limitReached ? "warn" : "bad");
+    setStatus(
+      limitReached ? "Weekly limit reached" : startMayHaveBeenSent ? "Start sent; logging unconfirmed" : `Couldn’t start ${machine?.name || "machine"}`,
+      limitReached || startMayHaveBeenSent ? "warn" : "bad"
+    );
   }
   bluetoothFailureStage = isConnected() ? "connected" : "idle";
 }
@@ -1988,31 +1971,6 @@ async function readSelectedMachineOccupancy() {
   return {
     inUse: textValue === "1120" || hexValue === "1120",
     raw: textValue || hexValue
-  };
-}
-
-async function confirmSelectedMachineStarted() {
-  let successfulReads = 0;
-  let lastError = null;
-  let lastRaw = "";
-  for (const delayMs of START_CONFIRMATION_DELAYS_MS) {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    if (!isConnected()) return { confirmed: false, reason: "disconnected", successfulReads, lastRaw };
-    try {
-      const state = await readSelectedMachineOccupancy();
-      successfulReads += 1;
-      lastRaw = state.raw;
-      if (state.inUse) return { confirmed: true, reason: "occupied", successfulReads, lastRaw };
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  return {
-    confirmed: false,
-    reason: successfulReads ? "not_in_use" : "occupancy_read_failed",
-    successfulReads,
-    lastRaw,
-    error: lastError
   };
 }
 

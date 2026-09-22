@@ -1206,6 +1206,19 @@ async function cancelTrialActivation(activationId, reason = "unconfirmed") {
   try { await api("cancel_activation", { activationId, reason }); } catch (_) {}
 }
 
+async function completeTrialActivation(activationId) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await api("complete_activation", { activationId });
+    } catch (error) {
+      lastError = error;
+      if (error?.code === "trial_used" || error?.code === "activation_not_found") break;
+    }
+  }
+  throw lastError || new Error("Free-trial activation completion failed");
+}
+
 async function startMachine(machine, cycleKey, label) {
   if (!isConnected() || !deviceMatchesMachine() || completed) return;
   cycleButtons.forEach((button) => { button.disabled = true; });
@@ -1243,7 +1256,7 @@ async function startMachine(machine, cycleKey, label) {
     stage = "execution-sent";
     stage = "completion";
     bluetoothFailureStage = stage;
-    const completion = await api("complete_activation", { activationId: prepared.activationId });
+    const completion = await completeTrialActivation(prepared.activationId);
     stage = "completed";
     context = { ...context, activation: completion.activation || context.activation, activatedAt: completion.activatedAt };
     saveClaim({ ...claim, used: true, activatedAt: completion.activatedAt || new Date().toISOString(), activation: completion.activation || context.activation });
@@ -1259,7 +1272,8 @@ async function startMachine(machine, cycleKey, label) {
     // the browser's Bluetooth overlay on top of the savings screen.
     showActivationOutcome("success", context);
   } catch (error) {
-    await cancelTrialActivation(context.activation?.id, error?.code || stage);
+    const startMayHaveBeenSent = ["execution-sent", "completion", "completed"].includes(stage);
+    if (!startMayHaveBeenSent) await cancelTrialActivation(context.activation?.id, error?.code || stage);
     if (error.code === "trial_used") {
       try { applySession(await api("session")); }
       catch (_) { showActivationOutcome("uncertain", context); }
