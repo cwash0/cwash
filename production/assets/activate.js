@@ -132,7 +132,6 @@
       // Keep the site in the URL so refresh also works when storage is blocked.
       history.replaceState(null, "", store.activationUrl(site.id));
       byId("siteTitle").textContent = site.name;
-      byId("siteAddress").textContent = site.address;
       document.title = site.name;
       byId("pageStatus").hidden = site.machines.length > 0;
       byId("pageStatus").textContent = "No machines available. Choose another site.";
