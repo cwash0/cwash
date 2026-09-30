@@ -8,15 +8,16 @@
   const controller = window.createLaundryBluetooth({
     bluetooth: navigator.bluetooth,
     onDisconnect: () => {
-      if (!busy) setState("ready", "Connection ended", "Reconnect when you’re ready to start a cycle.");
+      if (!busy) setState("ready", "Connection ended");
       updateControls();
     }
   });
 
-  function setState(state, title, hint) {
+  function setState(state, title, hint = "") {
     byId("connectionPanel").dataset.state = state;
     byId("connectionTitle").textContent = title;
     byId("connectionHint").textContent = hint;
+    byId("connectionHint").hidden = !hint;
     updateControls();
   }
 
@@ -27,8 +28,6 @@
     connectButton.textContent = busy ? "Please wait…" : "Connect →";
     byId("machinePickerTrigger").disabled = busy;
     byId("connectionDot").classList.toggle("connected", connected);
-    byId("cycleHint").textContent = busy ? "Keep this page open while the machine connects or starts."
-      : connected ? "Choose a cycle to start your machine." : "Connect to your machine to choose a cycle.";
     cycleButtons.querySelectorAll("button").forEach((button) => { button.disabled = busy || !connected; });
   }
 
@@ -55,7 +54,7 @@
       button.addEventListener("click", () => startCycle(cycle));
       cycleButtons.append(button);
     });
-    setState("ready", "Ready to connect", "Make sure you’re in the laundry room.");
+    setState("ready", "Ready to connect");
   }
 
   function openPicker() {
@@ -82,40 +81,40 @@
   async function connect() {
     if (busy || !machine) return;
     if (!window.isSecureContext) {
-      setState("error", "A secure connection is needed", "Open this website over HTTPS to use Bluetooth.");
+      setState("error", "HTTPS required", "Open this page over HTTPS to connect.");
       return;
     }
     if (!navigator.bluetooth) {
       const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
       byId("bluefyLink").hidden = !ios;
-      setState("error", "Bluetooth isn’t available here", ios
-        ? "Open this page in Bluefy to connect to your machine."
-        : "Open this page in a browser with Web Bluetooth, such as Chrome or Edge on a compatible device.");
+      setState("error", "Bluetooth unavailable", ios
+        ? "Open this page in Bluefy."
+        : "Use Chrome or Edge on a Bluetooth-compatible device.");
       return;
     }
     busy = true;
-    setState("connecting", `Connecting to ${machine.name}…`, "Choose your machine in the Bluetooth window.");
+    setState("connecting", `Connecting to ${machine.name}…`);
     try {
       const result = await controller.connect(machine);
-      if (result.occupied) setState("warning", `${machine.name} is in use`, "Choose another machine or wait for this cycle to finish.");
-      else setState("connected", `Connected to ${machine.name}`, "You’re ready to choose a cycle.");
+      if (result.occupied) setState("warning", `${machine.name} is in use`, "Choose another machine or wait.");
+      else setState("connected", `Connected to ${machine.name}`);
     } catch (error) {
       const cancelled = error.name === "NotFoundError";
       setState(cancelled ? "ready" : "error", cancelled ? "Ready to connect" : "Couldn’t connect", cancelled
-        ? "Make sure you’re near the machine, then try again." : "Check that the machine is nearby and Bluetooth is on, then try again.");
+        ? "" : "Check Bluetooth is on and the machine is nearby.");
     } finally { busy = false; updateControls(); }
   }
 
   async function startCycle(cycle) {
     if (busy || !controller.isConnected()) return;
     busy = true;
-    setState("starting", `Starting ${machine.name}…`, cycle.label);
+    setState("starting", `Starting ${machine.name}…`);
     try {
       const result = await controller.start(cycle.key);
       setState("complete", result.acknowledged ? `${machine.name} started` : "Start command sent", result.acknowledged
-        ? `${cycle.label}. You’re all set.` : "Check the machine to confirm the cycle has started.");
+        ? "" : "Check the machine to confirm it started.");
     } catch (error) {
-      setState("error", "Couldn’t confirm the start", error.message || "Check your machine, then reconnect to try again.");
+      setState("error", "Couldn’t confirm the start", error.message || "Check the machine before reconnecting.");
     } finally { busy = false; updateControls(); }
   }
 
@@ -134,14 +133,14 @@
       history.replaceState(null, "", store.activationUrl(site.id));
       byId("siteTitle").textContent = site.name;
       byId("siteAddress").textContent = site.address;
-      document.title = `${site.name} | CircuitWash`;
+      document.title = site.name;
       byId("pageStatus").hidden = site.machines.length > 0;
-      byId("pageStatus").textContent = "No machines are available at this site. Choose another site to continue.";
+      byId("pageStatus").textContent = "No machines available. Choose another site.";
       byId("machineControls").hidden = !site.machines.length;
       if (site.machines.length) selectMachine(site.machines[0]);
     } catch {
       byId("siteTitle").textContent = "Couldn’t load your site";
-      byId("pageStatus").textContent = "Check your connection and try again, or choose another site.";
+      byId("pageStatus").textContent = "Check your connection and try again.";
       byId("retrySite").hidden = false;
     }
   }
@@ -156,7 +155,7 @@
   byId("retrySite").addEventListener("click", init);
   window.addEventListener("pagehide", () => controller.disconnect());
   window.addEventListener("pageshow", (event) => {
-    if (event.persisted && machine) setState("ready", "Ready to connect", "Make sure you’re in the laundry room.");
+    if (event.persisted && machine) setState("ready", "Ready to connect");
   });
   init();
 })();

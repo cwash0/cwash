@@ -4,21 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
-  <title>Page not found | CircuitWash</title>
+  <title>Page not found</title>
   <base href="/">
-  <link rel="icon" href="assets/favicon.png" type="image/png" />
+  <script>
+    // Project Pages use /cwash/; custom domains use the domain root.
+    if (location.hostname.endsWith(".github.io")) {
+      document.querySelector("base").href = "/cwash/";
+    }
+  </script>
+  <link rel="icon" href="assets/washer.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="assets/site.css" />
 </head>
 <body>
   <div class="page-shell">
-    <header class="site-header"><a class="brand" href="index.html">Circuit<span>Wash</span></a></header>
     <main class="search-main">
-      <p class="eyebrow">404 · PAGE NOT FOUND</p>
-      <h1>Let’s get you <span>back.</span></h1>
-      <p class="intro">This page is no longer available.</p>
+      <h1>Page not found</h1>
       <a class="secondary-button" href="index.html?change=1">Find your site →</a>
     </main>
-    <footer>© 2026 CircuitWash</footer>
   </div>
 </body>
 </html>

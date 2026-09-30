@@ -1,0 +1,8 @@
+preview/.env
+preview/.env.*
+!preview/.env.example
+preview/*.log
+node_modules/
+npm-debug.log*
+*.log
+.retired/

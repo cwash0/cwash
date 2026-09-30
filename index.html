@@ -5,36 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#050b14" />
   <meta name="description" content="Find your laundry site and start a wash with unlimited access." />
-  <title>Find your site | CircuitWash</title>
-  <link rel="icon" href="assets/favicon.png" type="image/png" />
+  <title>Find a site</title>
+  <link rel="icon" href="assets/washer.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="assets/site.css" />
   <script src="assets/site-data.js" defer></script>
   <script src="assets/landing.js" defer></script>
 </head>
 <body>
   <div class="page-shell">
-    <header class="site-header">
-      <a class="brand" href="index.html" aria-label="CircuitWash home">Circuit<span>Wash</span></a>
-    </header>
     <main class="search-main">
-      <p class="eyebrow">YOUR LAUNDRY, SIMPLIFIED</p>
-      <h1>Find your <span>site.</span></h1>
-      <p class="intro">Choose your laundry room to get started.</p>
+      <h1>Find a site</h1>
       <div class="site-search">
         <label class="visually-hidden" for="siteSearch">Search for your site</label>
         <div class="search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
-          <input id="siteSearch" type="search" placeholder="Search by site name or address" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="siteResults" aria-expanded="false" aria-describedby="searchStatus" disabled />
+          <input id="siteSearch" type="search" placeholder="Site name or address" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="siteResults" aria-expanded="false" aria-describedby="searchStatus" disabled />
         </div>
         <div id="siteResults" class="site-results" role="listbox" aria-label="Matching sites" hidden></div>
       </div>
       <p id="searchStatus" class="search-status" role="status" aria-live="polite">Loading sites…</p>
       <button id="retrySites" class="text-button" type="button" hidden>Try again</button>
       <a id="savedSite" class="saved-site" hidden></a>
-      <p class="remember-note">Your choice is remembered on this device.</p>
-      <noscript><p>Enable JavaScript to search for a site and use Bluetooth activation.</p></noscript>
+      <noscript><p>Enable JavaScript to search.</p></noscript>
     </main>
-    <footer>© 2026 CircuitWash</footer>
   </div>
 </body>
 </html>

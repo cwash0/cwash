@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#050b14" />
-  <title>Start your wash | CircuitWash</title>
-  <link rel="icon" href="assets/favicon.png" type="image/png" />
+  <title>Activate a machine</title>
+  <link rel="icon" href="assets/washer.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="assets/site.css" />
   <script src="assets/site-data.js" defer></script>
   <script src="assets/bluetooth.js" defer></script>
@@ -13,16 +13,13 @@
 </head>
 <body>
   <div class="activation-shell">
-    <header class="site-header">
-      <a class="brand" href="index.html" aria-label="CircuitWash home">Circuit<span>Wash</span></a>
-      <a id="changeSiteBtn" class="secondary-button" href="index.html?change=1">Change site</a>
-    </header>
     <main>
       <section class="location-summary" aria-labelledby="siteTitle">
-        <p class="eyebrow">LAUNDRY ROOM</p>
-        <h1 id="siteTitle">Loading your site…</h1>
+        <div class="site-heading">
+          <h1 id="siteTitle">Loading…</h1>
+          <a id="changeSiteBtn" class="secondary-button" href="index.html?change=1">Change site</a>
+        </div>
         <p id="siteAddress" class="site-address"></p>
-        <span class="access-badge"><span aria-hidden="true">∞</span> Unlimited access</span>
       </section>
       <p id="pageStatus" role="status" aria-live="polite">Loading machines…</p>
       <button id="retrySite" class="secondary-button" type="button" hidden>Try again</button>
@@ -37,22 +34,19 @@
         <section id="connectionPanel" class="panel connection-panel" data-state="ready" aria-labelledby="connectionTitle">
           <div class="connection-icon" aria-hidden="true"><img src="assets/connect.svg" alt="" /></div>
           <div class="connection-copy" role="status" aria-live="polite" aria-atomic="true">
-            <p class="eyebrow">BLUETOOTH CONNECTION</p>
             <h2 id="connectionTitle">Ready to connect</h2>
-            <p id="connectionHint">Make sure you’re in the laundry room.</p>
+            <p id="connectionHint" hidden></p>
           </div>
           <button id="connectBtn" class="primary-button" type="button">Connect <span aria-hidden="true">→</span></button>
           <a id="bluefyLink" class="browser-link" href="https://apps.apple.com/us/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener noreferrer" hidden>Get Bluefy for iPhone or iPad ↗</a>
         </section>
         <section class="panel cycle-panel" aria-labelledby="cycleTitle">
           <div class="section-heading"><h2 id="cycleTitle">Choose a cycle</h2><span id="connectionDot" class="connection-dot" aria-hidden="true"></span></div>
-          <p id="cycleHint" class="cycle-hint">Connect to your machine to choose a cycle.</p>
           <div id="machineButtons" class="machine-actions"></div>
         </section>
       </div>
-      <noscript><p>Enable JavaScript to use Bluetooth activation.</p></noscript>
+      <noscript><p>Enable JavaScript to activate a machine.</p></noscript>
     </main>
-    <footer>© 2026 CircuitWash</footer>
   </div>
   <dialog id="machinePicker" aria-labelledby="machinePickerTitle">
     <div class="dialog-heading"><h2 id="machinePickerTitle">Choose a machine</h2><button id="closeMachinePicker" class="secondary-button" type="button">Close</button></div>

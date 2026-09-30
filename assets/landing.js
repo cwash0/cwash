@@ -32,9 +32,11 @@
     setActive(-1);
     results.hidden = !matches.length;
     input.setAttribute("aria-expanded", String(matches.length > 0));
-    status.textContent = input.value.trim().length < 2 ? "Enter at least 2 characters to find your site."
-      : !matches.length ? "No matching sites. Try another name or address."
-      : allMatches.length > 40 ? `${allMatches.length} sites found. Showing the first 40 — keep typing to narrow your search.`
+    const hasQuery = input.value.trim().length >= 2;
+    status.classList.toggle("visually-hidden", !hasQuery || (matches.length > 0 && allMatches.length <= 40));
+    status.textContent = !hasQuery ? "Enter at least 2 characters."
+      : !matches.length ? "No matching sites."
+      : allMatches.length > 40 ? `Showing 40 of ${allMatches.length} sites. Keep typing to narrow the results.`
       : `${matches.length} ${matches.length === 1 ? "site" : "sites"} found.`;
     matches.forEach((site, index) => {
       const option = document.createElement("button");
@@ -83,6 +85,7 @@
 
   async function init() {
     retry.hidden = true;
+    status.classList.remove("visually-hidden");
     status.textContent = "Loading sites…";
     try {
       sites = await store.loadCatalog();
@@ -99,7 +102,7 @@
       input.disabled = false;
       render();
     } catch {
-      status.textContent = "Couldn’t load the sites. Check your connection and try again.";
+      status.textContent = "Couldn’t load sites.";
       retry.hidden = false;
     }
   }
