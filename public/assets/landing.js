@@ -1,229 +1,109 @@
-const TRIAL_CLAIM_KEY = "zaftFreeTrialClaim";
-const ACTIVATE_SESSION_KEY = "laundryActivateAccessCode";
-const primaryAction = document.querySelector("[data-primary-action]");
-const paidAccessAction = document.querySelector("[data-paid-access-action]");
-const headerCodeAction = document.querySelector("[data-access-code-entry]");
-let landingState = { authState: "anonymous", trialEligibility: "unknown", actionKind: "wash" };
+(() => {
+  const store = window.CircuitWash;
+  const input = document.getElementById("siteSearch");
+  const results = document.getElementById("siteResults");
+  const status = document.getElementById("searchStatus");
+  const retry = document.getElementById("retrySites");
+  const savedLink = document.getElementById("savedSite");
+  let sites = [], matches = [], activeIndex = -1;
 
-function hasSavedAccess() {
-  try { return Boolean(String(localStorage.getItem(ACTIVATE_SESSION_KEY) || "").trim()); }
-  catch (_) { return false; }
-}
+  function select(site) {
+    if (!site) return;
+    store.rememberSite(site.id);
+    location.assign(store.activationUrl(site.id));
+  }
 
-function cachedTrialClaim() {
-  try {
-    const claim = JSON.parse(localStorage.getItem(TRIAL_CLAIM_KEY) || "null");
-    if (!claim?.token) {
-      localStorage.removeItem(TRIAL_CLAIM_KEY);
-      return null;
+  function setActive(index) {
+    activeIndex = index;
+    Array.from(results.children).forEach((option, i) => {
+      option.setAttribute("aria-selected", String(i === index));
+      if (i === index) {
+        input.setAttribute("aria-activedescendant", option.id);
+        option.scrollIntoView({ block: "nearest" });
+      }
+    });
+    if (index < 0) input.removeAttribute("aria-activedescendant");
+  }
+
+  function render() {
+    const allMatches = store.search(sites, input.value);
+    matches = allMatches.slice(0, 40);
+    results.replaceChildren();
+    setActive(-1);
+    results.hidden = !matches.length;
+    input.setAttribute("aria-expanded", String(matches.length > 0));
+    status.textContent = input.value.trim().length < 2 ? "Enter at least 2 characters to find your site."
+      : !matches.length ? "No matching sites. Try another name or address."
+      : allMatches.length > 40 ? `${allMatches.length} sites found. Showing the first 40 — keep typing to narrow your search.`
+      : `${matches.length} ${matches.length === 1 ? "site" : "sites"} found.`;
+    matches.forEach((site, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "site-result";
+      option.id = `site-option-${index}`;
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", "false");
+      option.tabIndex = -1;
+      const copy = document.createElement("span");
+      const name = document.createElement("strong");
+      name.textContent = site.name;
+      copy.append(name);
+      if (site.address) {
+        const address = document.createElement("small");
+        address.textContent = site.address;
+        copy.append(address);
+      }
+      const arrow = document.createElement("span");
+      arrow.className = "result-arrow";
+      arrow.textContent = "→";
+      arrow.setAttribute("aria-hidden", "true");
+      option.append(copy, arrow);
+      option.addEventListener("click", () => select(site));
+      results.append(option);
+    });
+  }
+
+  input.addEventListener("input", render);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      results.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      setActive(-1);
+    } else if (matches.length && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      results.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      setActive(event.key === "ArrowDown" ? Math.min(activeIndex + 1, matches.length - 1) : Math.max(activeIndex - 1, 0));
+    } else if (event.key === "Enter" && !results.hidden) {
+      event.preventDefault();
+      if (activeIndex >= 0) select(matches[activeIndex]);
+      else if (matches.length === 1) select(matches[0]);
     }
-    return claim;
-  } catch (_) {
-    return null;
-  }
-}
-
-function clearCachedTrialClaim() {
-  try { localStorage.removeItem(TRIAL_CLAIM_KEY); } catch (_) {}
-}
-
-function saveCachedTrialClaim(claim) {
-  try { localStorage.setItem(TRIAL_CLAIM_KEY, JSON.stringify(claim)); } catch (_) {}
-}
-
-function claimedTrialHref(claim) {
-  const token = String(claim?.token || "").trim();
-  return token ? `/trial-activate.html#trial=${encodeURIComponent(token)}` : "/trial-activate.html";
-}
-
-function setActionVisible(action, visible) {
-  if (!action) return;
-  if (visible) {
-    action.removeAttribute("hidden");
-    action.removeAttribute("aria-hidden");
-    action.tabIndex = 0;
-    return;
-  }
-  action.setAttribute("hidden", "");
-  action.setAttribute("aria-hidden", "true");
-  action.tabIndex = -1;
-}
-
-function setPrimaryActionResolving() {
-  if (!primaryAction) return;
-  primaryAction.classList.remove("is-navigating");
-  primaryAction.classList.add("is-resolving");
-  primaryAction.setAttribute("aria-busy", "true");
-  primaryAction.setAttribute("aria-disabled", "true");
-  primaryAction.setAttribute("aria-label", "Checking wash options");
-  primaryAction.tabIndex = -1;
-  setActionVisible(paidAccessAction, false);
-  setActionVisible(headerCodeAction, false);
-}
-
-function setPrimaryAction({ href, actionKind, trialEligibility, showPaidAccess = false, showHeaderCode = true }) {
-  landingState = { ...landingState, actionKind, trialEligibility };
-  if (!primaryAction) return;
-  primaryAction.href = href;
-  primaryAction.dataset.actionKind = actionKind;
-  const label = primaryAction.querySelector("[data-primary-action-label]");
-  if (label) label.textContent = actionKind === "trial" ? "Try your first wash free" : "Start a wash";
-  primaryAction.classList.remove("is-resolving");
-  primaryAction.removeAttribute("aria-busy");
-  primaryAction.removeAttribute("aria-disabled");
-  primaryAction.removeAttribute("aria-label");
-  primaryAction.tabIndex = 0;
-  setActionVisible(paidAccessAction, showPaidAccess);
-  setActionVisible(headerCodeAction, showHeaderCode);
-}
-
-async function freeTrialState(claim) {
-  if (!claim) return "available";
-  if (claim.used || claim.activatedAt) return "used";
-  const response = await fetch("/.netlify/functions/free-trial", {
-    method: "POST",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "session", trialToken: claim.token })
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.ok === false) {
-    if (data.error === "trial_used") {
-      saveCachedTrialClaim({ ...claim, used: true, activatedAt: data.activatedAt || new Date().toISOString() });
-      return "used";
+
+  async function init() {
+    retry.hidden = true;
+    status.textContent = "Loading sites…";
+    try {
+      sites = await store.loadCatalog();
+      const saved = sites.find((site) => site.id === store.savedSiteId());
+      if (saved && new URLSearchParams(location.search).get("change") !== "1") {
+        location.replace(store.activationUrl(saved.id));
+        return;
+      }
+      if (saved) {
+        savedLink.textContent = `Back to ${saved.name} →`;
+        savedLink.href = store.activationUrl(saved.id);
+        savedLink.hidden = false;
+      }
+      input.disabled = false;
+      render();
+    } catch {
+      status.textContent = "Couldn’t load the sites. Check your connection and try again.";
+      retry.hidden = false;
     }
-    if (response.status === 400 || response.status === 404 || data.error === "trial_not_found") {
-      clearCachedTrialClaim();
-      return "available";
-    }
-    throw new Error("trial_status_failed");
   }
-  if (data.used) {
-    saveCachedTrialClaim({ ...claim, used: true, activatedAt: data.activatedAt || new Date().toISOString() });
-    return "used";
-  }
-  return "claimed";
-}
-
-function trackLandingView() {
-  window.CircuitWashAnalytics?.track("landing_view", {
-    source: "homepage",
-    auth_state: landingState.authState,
-    trial_eligibility: landingState.trialEligibility
-  }, { once: "landing_view" });
-}
-
-async function initialiseLanding() {
-  setPrimaryActionResolving();
-  const authenticated = hasSavedAccess();
-  landingState.authState = authenticated ? "authenticated" : "anonymous";
-  document.documentElement.dataset.authState = landingState.authState;
-
-  if (authenticated) {
-    setPrimaryAction({
-      href: "/activate.html",
-      actionKind: "wash",
-      trialEligibility: "unknown",
-      showHeaderCode: false
-    });
-    trackLandingView();
-    return;
-  }
-
-  const localClaim = cachedTrialClaim();
-  if (localClaim?.used || localClaim?.activatedAt) {
-    setPrimaryAction({ href: "/pay.html", actionKind: "paid-access", trialEligibility: "used" });
-    trackLandingView();
-    return;
-  }
-
-  // Local state is enough to choose the useful destination immediately. The
-  // server check below can still correct it without holding the CTA disabled.
-  if (localClaim) {
-    setPrimaryAction({ href: claimedTrialHref(localClaim), actionKind: "trial", trialEligibility: "claimed" });
-  } else {
-    setPrimaryAction({ href: "/trial.html", actionKind: "trial", trialEligibility: "available" });
-  }
-
-  try {
-    const response = await fetch("/.netlify/functions/free-trial", {
-      method: "POST",
-      cache: "no-store",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "status" })
-    });
-    if (!response.ok) throw new Error("trial_status_failed");
-    const data = await response.json();
-    if (!data?.enabled) {
-      setPrimaryAction({
-        href: "/activate.html",
-        actionKind: "wash",
-        trialEligibility: "disabled",
-        showPaidAccess: true,
-        showHeaderCode: false
-      });
-      trackLandingView();
-      return;
-    }
-
-    const state = await freeTrialState(localClaim);
-    if (state === "claimed") {
-      setPrimaryAction({ href: claimedTrialHref(localClaim), actionKind: "trial", trialEligibility: "claimed" });
-    } else if (state === "used") {
-      setPrimaryAction({ href: "/pay.html", actionKind: "paid-access", trialEligibility: "used" });
-    } else {
-      setPrimaryAction({ href: "/trial.html", actionKind: "trial", trialEligibility: "available" });
-    }
-  } catch (_) {
-    setPrimaryAction({
-      href: "/activate.html",
-      actionKind: "wash",
-      trialEligibility: "unavailable",
-      showPaidAccess: true,
-      showHeaderCode: false
-    });
-  }
-
-  trackLandingView();
-}
-
-function beginNavigation(event) {
-  if (!primaryAction || primaryAction.classList.contains("is-resolving") || primaryAction.classList.contains("is-navigating")) {
-    event.preventDefault();
-    return;
-  }
-
-  const source = primaryAction.dataset.source || "landing";
-  if (primaryAction.dataset.actionKind === "trial") {
-    window.CircuitWashAnalytics?.track("trial_cta_clicked", {
-      source,
-      auth_state: landingState.authState,
-      trial_eligibility: landingState.trialEligibility
-    });
-  }
-
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-  event.preventDefault();
-  const destination = primaryAction.href;
-  primaryAction.classList.add("is-navigating");
-  const reducedMotion = typeof window.matchMedia === "function"
-    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const navigationDelay = reducedMotion ? 0 : 90;
-  window.requestAnimationFrame(() => window.setTimeout(() => location.assign(destination), navigationDelay));
-}
-
-primaryAction?.addEventListener("click", beginNavigation);
-
-document.querySelectorAll("[data-access-code-entry]").forEach((entry) => entry.addEventListener("click", () => {
-  window.CircuitWashAnalytics?.track("access_code_clicked", {
-    source: entry.dataset.source || "landing",
-    auth_state: landingState.authState,
-    trial_eligibility: landingState.trialEligibility
-  });
-}));
-
-window.addEventListener("pageshow", (event) => {
-  if (event.persisted) initialiseLanding();
-});
-
-initialiseLanding();
+  retry.addEventListener("click", init);
+  window.addEventListener("pageshow", (event) => { if (event.persisted) init(); });
+  init();
+})();
