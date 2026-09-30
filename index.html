@@ -8,24 +8,35 @@
   <title>Find a site</title>
   <link rel="icon" href="assets/washer.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="assets/site.css" />
+  <link rel="stylesheet" href="assets/landing.css" />
   <script src="assets/site-data.js" defer></script>
   <script src="assets/landing.js" defer></script>
 </head>
-<body>
+<body class="landing-page">
   <div class="page-shell">
     <main class="search-main">
-      <h1>Find a site</h1>
+      <div class="landing-heading">
+        <div class="location-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><path d="M25 13c0 7-9 14-9 14S7 20 7 13a9 9 0 1 1 18 0Z"/><circle cx="16" cy="13" r="3"/></svg>
+        </div>
+        <h1>Find your site<span aria-hidden="true">.</span></h1>
+      </div>
       <div class="site-search">
         <label class="visually-hidden" for="siteSearch">Search for your site</label>
         <div class="search-field">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
           <input id="siteSearch" type="search" placeholder="Site name or address" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="siteResults" aria-expanded="false" aria-describedby="searchStatus" disabled />
+          <button id="clearSearch" class="clear-search" type="button" aria-label="Clear search" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
         </div>
         <div id="siteResults" class="site-results" role="listbox" aria-label="Matching sites" hidden></div>
       </div>
       <p id="searchStatus" class="search-status" role="status" aria-live="polite">Loading sites…</p>
       <button id="retrySites" class="text-button" type="button" hidden>Try again</button>
-      <a id="savedSite" class="saved-site" hidden></a>
+      <a id="savedSite" class="saved-site" hidden>
+        <span class="saved-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6M12 7v5l3 2"/></svg></span>
+        <span class="saved-copy"><span>Back to</span><strong id="savedSiteName"></strong></span>
+        <span class="saved-arrow" aria-hidden="true">→</span>
+      </a>
       <noscript><p>Enable JavaScript to search.</p></noscript>
     </main>
   </div>

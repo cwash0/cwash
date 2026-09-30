@@ -5,6 +5,8 @@
   const status = document.getElementById("searchStatus");
   const retry = document.getElementById("retrySites");
   const savedLink = document.getElementById("savedSite");
+  const savedName = document.getElementById("savedSiteName");
+  const clearButton = document.getElementById("clearSearch");
   let sites = [], matches = [], activeIndex = -1;
 
   function select(site) {
@@ -26,6 +28,7 @@
   }
 
   function render() {
+    clearButton.hidden = !input.value;
     const allMatches = store.search(sites, input.value);
     matches = allMatches.slice(0, 40);
     results.replaceChildren();
@@ -66,6 +69,11 @@
   }
 
   input.addEventListener("input", render);
+  clearButton.addEventListener("click", () => {
+    input.value = "";
+    render();
+    input.focus();
+  });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       results.hidden = true;
@@ -95,7 +103,7 @@
         return;
       }
       if (saved) {
-        savedLink.textContent = `Back to ${saved.name} →`;
+        savedName.textContent = saved.name;
         savedLink.href = store.activationUrl(saved.id);
         savedLink.hidden = false;
       }
