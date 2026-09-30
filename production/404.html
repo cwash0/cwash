@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Page not found</title>
+  <base href="/">
+  <script>
+    // Project Pages use /cwash/; custom domains use the domain root.
+    if (location.hostname.endsWith(".github.io")) {
+      document.querySelector("base").href = "/cwash/";
+    }
+  </script>
+  <link rel="icon" href="assets/washer.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <main class="search-main">
+      <h1>Page not found</h1>
+      <a class="secondary-button" href="index.html?change=1">Find your site →</a>
+    </main>
+  </div>
+</body>
+</html>
