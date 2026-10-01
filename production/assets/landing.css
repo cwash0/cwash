@@ -13,24 +13,22 @@
 .location-mark svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .landing-page h1 { margin: 0; font-size: clamp(36px, 6vw, 56px); line-height: 1.1; font-weight: 650; letter-spacing: -.055em; }
 .landing-page h1 > span { color: #8ee5df; }
-.landing-page .site-search { border: 0; border-radius: 0; overflow: visible; background: none; }
-.landing-page .site-search:focus-within { box-shadow: none; }
+.landing-page .site-search { border: 1px solid #2b3d49; border-radius: 18px; overflow: hidden; background: #101c27; box-shadow: 0 12px 40px #00000020; transition: box-shadow .18s, border-color .18s; }
+.landing-page .site-search:focus-within { border-color: #476d76; box-shadow: 0 0 0 3px #81e1d90c, 0 12px 40px #00000020; }
 .landing-page .search-field {
-  min-height: 76px; gap: 15px; padding: 0 24px; border: 1px solid #ffffff;
-  border-radius: 18px; background: #f3f6f7; box-shadow: 0 12px 40px #00000020;
-  transition: box-shadow .18s, border-color .18s;
+  min-height: 76px; gap: 15px; padding: 0 24px; border: 0;
+  background: transparent;
 }
-.landing-page .search-field:focus-within { border-color: #9ae8e3; box-shadow: 0 0 0 4px #81e1d91c, 0 12px 40px #00000020; }
-.landing-page .search-field > svg { width: 23px; height: 23px; stroke: #536773; stroke-width: 1.8; }
-.landing-page .search-field input { min-height: 74px; color: #13232b; font-size: 17px; }
-.landing-page .search-field input::placeholder { color: #677782; }
+.landing-page .search-field > svg { width: 23px; height: 23px; stroke: #9ab4c0; stroke-width: 1.8; }
+.landing-page .search-field input { min-height: 74px; color: #f1f5f7; font-size: 17px; }
+.landing-page .search-field input::placeholder { color: #93a8b7; }
 .landing-page .search-field input:disabled { opacity: .65; }
 .landing-page .search-field input::-webkit-search-cancel-button { appearance: none; }
-.clear-search { display: grid; place-items: center; flex: 0 0 36px; height: 36px; padding: 8px; border: 0; border-radius: 50%; color: #526570; background: #e3e9eb; }
-.clear-search:hover { color: #152c35; background: #d4e0e2; }
-.clear-search:focus-visible { outline-color: #177b80; outline-offset: 3px; }
+.clear-search { display: grid; place-items: center; flex: 0 0 36px; height: 36px; padding: 8px; border: 0; border-radius: 50%; color: #afc4ce; background: #233946; }
+.clear-search:hover { color: #e4f4f5; background: #2c4955; }
+.clear-search:focus-visible { outline-color: #9ee6e1; outline-offset: 3px; }
 .clear-search svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.8; }
-.landing-page .site-results { max-height: min(400px, 48svh); margin-top: 12px; padding: 7px; border: 1px solid #253440; border-radius: 18px; background: #101c27; box-shadow: 0 16px 36px #00000020; scrollbar-width: thin; scrollbar-color: #3c515e transparent; }
+.landing-page .site-results { max-height: min(400px, 48svh); margin: 0; padding: 7px; border: 0; border-top: 1px solid #293b48; background: transparent; scrollbar-width: thin; scrollbar-color: #3c515e transparent; }
 .landing-page .site-result { min-height: 68px; gap: 14px; padding: 15px 16px; border: 0; border-radius: 11px; transition: background .15s; }
 .landing-page .site-result + .site-result { margin-top: 3px; }
 .landing-page .site-result:hover, .landing-page .site-result[aria-selected="true"] { background: #1d333d; }
@@ -54,11 +52,12 @@
   .landing-heading { margin-bottom: 30px; }
   .location-mark { width: 58px; height: 58px; margin-bottom: 24px; border-radius: 20px; }
   .landing-page h1 { font-size: clamp(32px, 9.2vw, 46px); }
-  .landing-page .search-field { min-height: 66px; padding: 0 17px; gap: 11px; border-radius: 15px; }
+  .landing-page .site-search { border-radius: 15px; }
+  .landing-page .search-field { min-height: 66px; padding: 0 17px; gap: 11px; }
   .landing-page .search-field input { min-height: 64px; font-size: 16px; }
   .landing-page .search-field > svg { width: 20px; height: 20px; }
   .clear-search { flex-basis: 32px; height: 32px; padding: 6px; }
-  .landing-page .site-results { padding: 5px; border-radius: 15px; }
+  .landing-page .site-results { padding: 5px; }
   .landing-page .site-result { padding: 14px 12px; }
   .landing-page .saved-site { margin-top: 18px; padding: 17px; gap: 14px; border-radius: 15px; }
 }
