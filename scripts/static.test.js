@@ -5,7 +5,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const createStore = require("../assets/site-data");
 const createBluetooth = require("../assets/bluetooth");
-const { createServer, normalizeBasePath, renderNotFound } = require("../preview/local-preview");
+const { createDiagnosticWriter, validateAttempt } = require("./ble-log");
+const { createHandler: createNetlifyBleLogHandler } = require("../netlify/functions/ble-log");
+const { createServer, normalizeBasePath, renderNotFound } = require("./local-server");
 const root = path.resolve(__dirname, "..");
 const dataRoot = path.join(root, "assets/data");
 const catalog = JSON.parse(fs.readFileSync(path.join(dataRoot, "catalog.json")));
@@ -83,17 +85,19 @@ test("failed static downloads can be retried", async () => {
 });
 
 const machine = { name: "Washer 1", bluetoothName: "TEST_MACHINE", cycles: [{ key: "standard", label: "Standard Eco", command: "[ACTIVATE:TEST]" }] };
-function fakeBluetooth({ occupancy = "0", notifications = true, ack = true, errorAt, wrongDevice = false, writeMode = "writeValueWithoutResponse", pause } = {}) {
-  const writes = [], waits = [];
+function fakeBluetooth({ occupancy = "0", notifications = true, ack = true, errorAt, wrongDevice = false, writeMode = "writeValueWithoutResponse", pause, selectedMachine = machine, replayCapturedSecure = false, replyForWrite, onDiagnostic } = {}) {
+  const writes = [], rawWrites = [], waits = [];
   const device = new EventTarget();
-  device.name = wrongDevice ? "WRONG_MACHINE" : machine.bluetoothName;
+  device.name = wrongDevice ? "WRONG_MACHINE" : selectedMachine.bluetoothName;
   const rx = new EventTarget();
   rx.startNotifications = async () => {};
   const tx = { [writeMode]: async (bytes) => {
     const text = new TextDecoder().decode(bytes);
     writes.push(text);
+    rawWrites.push(Buffer.from(bytes).toString("hex"));
     if (!notifications) return;
-    const reply = errorAt === text ? "[ERROR:REJECTED]" : ack ? text === "[HANDSHAKE:ENABLE]" ? "[ACK:HANDSHAKE]" : text === "[EXEC]" ? "[ACK:EXEC]" : "[ACK:ACTIVATE]" : "";
+    const reply = replyForWrite ? replyForWrite({ text, bytes, rawWrites })
+      : errorAt === text ? "[ERROR:REJECTED]" : ack ? text === "[HANDSHAKE:ENABLE]" ? "[ACK:HANDSHAKE]" : text === "[EXEC]" ? "[ACK:EXEC]" : "[ACK:ACTIVATE]" : "";
     for (const part of [reply.slice(0, 4), reply.slice(4)]) {
       const bytes = new TextEncoder().encode(part);
       rx.value = new DataView(bytes.buffer);
@@ -113,10 +117,10 @@ function fakeBluetooth({ occupancy = "0", notifications = true, ack = true, erro
   device.gatt = { connected: false, connect: async () => { device.gatt.connected = true; return { getPrimaryService: async () => service }; }, disconnect: () => { device.gatt.connected = false; device.dispatchEvent(new Event("gattserverdisconnected")); } };
   let disconnects = 0;
   const controller = createBluetooth({ bluetooth: { requestDevice: async (options) => {
-    assert.deepEqual(options.filters, [{ name: machine.bluetoothName }]);
+    assert.deepEqual(options.filters, [{ name: selectedMachine.bluetoothName }]);
     return device;
-  } }, onDisconnect: () => disconnects++, pause: async (ms) => { waits.push(ms); await pause?.(ms); } });
-  return { controller, writes, waits, device, setOccupancy: (value) => { currentOccupancy = value; }, disconnects: () => disconnects };
+  } }, onDisconnect: () => disconnects++, onDiagnostic, replayCapturedSecure, pause: async (ms) => { waits.push(ms); await pause?.(ms); } });
+  return { controller, writes, rawWrites, waits, device, setOccupancy: (value) => { currentOccupancy = value; }, disconnects: () => disconnects };
 }
 
 test("unlimited activation preserves command order, timing and acknowledgments", async () => {
@@ -130,6 +134,56 @@ test("unlimited activation preserves command order, timing and acknowledgments",
   assert.deepEqual(fixture.writes.slice(0, 3), ["[HANDSHAKE:ENABLE]", "[ACTIVATE:TEST]", "[EXEC]"]);
   assert.deepEqual(fixture.waits.slice(0, 3), [1000, 1000, 2000]);
   assert.equal(fixture.disconnects(), 0);
+});
+
+const capturedWasher = {
+  id: "washer2",
+  name: "Washer 2",
+  bluetoothName: "AW88T7FE96R1",
+  cycles: [{ key: "standardEco", label: "Standard Eco", command: "[ACTIVATE:LEGACY]" }]
+};
+const capturedChunks = [
+  "aa00000074415738385437464539365231010300",
+  "01000000320000000000000000eaa1273977628e",
+  "06d2110d33231c5275279f31ca68234c123e05c9",
+  "4c3e8f12da2038bbf8dec8c2edb756f38ea8fbf0",
+  "317016c9b3823306d733dc978fa5bb5e0b"
+];
+function capturedReply(sequence) {
+  return ({ text, rawWrites }) => text === "[VERSION]" ? "[VERSION:2.0.0]"
+    : text === "[GET:SEQ]" ? `[ACK:SEQ:${sequence}]`
+      : rawWrites.length === 7 ? "[ACK:SEC]" : "";
+}
+
+test("captured secure replay sends exact chunks only for the matching washer, cycle, and sequence", async () => {
+  const events = [];
+  const fixture = fakeBluetooth({ selectedMachine: capturedWasher, replayCapturedSecure: true, replyForWrite: capturedReply(115), onDiagnostic: (event) => events.push(event) });
+  await fixture.controller.connect(capturedWasher);
+  assert.deepEqual(await fixture.controller.start("standardEco"), { acknowledged: true, captureReplay: true });
+  assert.deepEqual(fixture.writes.slice(0, 2), ["[VERSION]", "[GET:SEQ]"]);
+  assert.deepEqual(fixture.rawWrites.slice(2), capturedChunks);
+  assert.deepEqual(fixture.waits, [1000, 1000, 1000]);
+  assert.equal(fixture.controller.isConnected(), false);
+  assert.deepEqual(events.filter((event) => event.type === "reply").map((event) => event.text), ["[VERSION:2.0.0]", "[ACK:SEQ:115]", "[ACK:SEC]"]);
+  assert.equal(events.filter((event) => event.type === "rx").map((event) => event.hex).join("").endsWith(Buffer.from("[ACK:SEC]").toString("hex")), true);
+  assert.ok(events.some((event) => event.type === "secure_packet_sent"));
+  assert.ok(events.every((event) => !capturedChunks.some((hex) => event.hex?.includes(hex))));
+  await fixture.controller.connect(capturedWasher);
+  await assert.rejects(fixture.controller.start("standardEco"), /already sent in this page/);
+  assert.equal(fixture.rawWrites.length, 9, "a second attempt must not resend binary chunks");
+
+  const ordinary = fakeBluetooth({ selectedMachine: capturedWasher, replayCapturedSecure: false });
+  await ordinary.controller.connect(capturedWasher);
+  assert.deepEqual(await ordinary.controller.start("standardEco"), { acknowledged: true });
+  assert.deepEqual(ordinary.writes, ["[HANDSHAKE:ENABLE]", "[ACTIVATE:LEGACY]", "[EXEC]"]);
+});
+
+test("captured secure replay refuses a stale sequence before sending binary bytes", async () => {
+  const fixture = fakeBluetooth({ selectedMachine: capturedWasher, replayCapturedSecure: true, replyForWrite: capturedReply(116) });
+  await fixture.controller.connect(capturedWasher);
+  await assert.rejects(fixture.controller.start("standardEco"), /requires sequence 115; washer returned 116/);
+  assert.deepEqual(fixture.writes, ["[VERSION]", "[GET:SEQ]"]);
+  assert.equal(fixture.controller.isConnected(), false);
 });
 
 test("occupied machines cannot start; occupancy is rechecked before starting", async () => {
@@ -205,7 +259,7 @@ test("the repository root contains the complete static site with no build or pub
     assert.ok(file === ".nojekyll" || file.endsWith(".html") || file.startsWith(`assets${path.sep}`));
     if (!/\.(js|html|css)$/.test(file)) continue;
     const source = fs.readFileSync(path.join(output, file), "utf8");
-    assert.doesNotMatch(source, /\.netlify\/functions|stripe|sendBeacon|support\.html|admin\.html|pay\.html|trial\.html|feedback\.html|account-menu|access.code|weeklyUsage/i);
+    assert.doesNotMatch(source, /stripe|sendBeacon|support\.html|admin\.html|pay\.html|trial\.html|feedback\.html|account-menu|access.code|weeklyUsage/i);
     if (file.endsWith(".html")) for (const match of source.matchAll(/<(?:link|script|img|a)\b[^>]*(?:src|href)="([^"?#]+)(?:[^\"]*)"/g)) {
       const ref = match[1];
       if (/^https?:/.test(ref)) continue;
@@ -213,15 +267,62 @@ test("the repository root contains the complete static site with no build or pub
       assert.ok(fs.existsSync(local), `Missing page asset: ${ref}`);
     }
   }
-  assert.ok(!fs.existsSync(path.join(root, "netlify/functions")));
-  assert.ok(!fs.existsSync(path.join(root, "production/netlify/functions")));
-  assert.ok(!fs.existsSync(path.join(root, "netlify.toml")));
-  assert.ok(!fs.existsSync(path.join(root, "production/netlify.toml")));
+  assert.ok(fs.existsSync(path.join(root, "netlify/functions/ble-log.js")));
+  if (fs.existsSync(path.join(root, "production"))) assert.deepEqual(fs.readdirSync(path.join(root, "production")), []);
+  assert.ok(fs.existsSync(path.join(root, "netlify.toml")));
   assert.ok(fs.existsSync(path.join(output, ".nojekyll")));
   assert.ok(!fs.existsSync(path.join(root, "public")));
-  assert.ok(!fs.existsSync(path.join(root, "production/public")));
+  assert.ok(!fs.existsSync(path.join(root, "preview")));
   assert.ok(!fs.existsSync(path.join(root, "scripts/build.js")));
-  assert.equal(Object.keys(require("../package.json").dependencies || {}).length, 0);
+  assert.deepEqual(Object.keys(require("../package.json").dependencies || {}), ["pg"]);
+});
+
+const sampleAttempt = () => ({
+  id: "6f8361d8-c44f-486a-a5f9-e2f8e2f78f92", siteId: "the_boulevard_b_block", machineId: "washer2",
+  bluetoothName: "AW88T7FE96R1", cycleKey: "standardEco", startedAt: "2026-10-17T01:00:00.000Z",
+  finishedAt: "2026-10-17T01:00:04.000Z", outcome: "acknowledged",
+  events: [{ at: "2026-10-17T01:00:01.000Z", type: "rx", text: "[ACK:SEQ:115]", hex: "5b41434b3a5345513a3131355d" }]
+});
+
+test("diagnostic writer validates a bounded washer attempt and parameterizes the insert", async () => {
+  const queries = [];
+  const pool = { query: async (sql, values) => { queries.push({ sql, values }); return { rowCount: 1 }; } };
+  const write = createDiagnosticWriter(null, pool);
+  const attempt = sampleAttempt();
+  assert.equal(validateAttempt(attempt), true);
+  assert.equal(await write(attempt), true);
+  assert.match(queries[0].sql, /CREATE TABLE IF NOT EXISTS public\.ble_test_logs/);
+  assert.match(queries[1].sql, /ON CONFLICT \(id\) DO NOTHING/);
+  assert.equal(queries[1].values[0], attempt.id);
+  assert.deepEqual(JSON.parse(queries[1].values[9]), attempt.events);
+  assert.equal(validateAttempt({ ...attempt, bluetoothName: "OTHER" }), false);
+  assert.equal(validateAttempt({ ...attempt, events: Array(101).fill(attempt.events[0]) }), false);
+});
+
+test("local log endpoint accepts same-origin diagnostics only", async () => {
+  const saved = [];
+  const server = createServer({ logWriter: async (attempt) => { saved.push(attempt); return true; } });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const post = (body, headers = {}) => fetch(`${origin}/.netlify/functions/ble-log`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await post(sampleAttempt())).status, 201);
+    assert.equal(saved.length, 1);
+    assert.equal((await post({ ...sampleAttempt(), machineId: "dryer1" })).status, 400);
+    assert.equal((await post(sampleAttempt(), { Origin: "https://example.com" })).status, 403);
+    assert.equal((await fetch(`${origin}/.netlify/functions/ble-log`)).status, 405);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
+
+test("Netlify function uses the server-side writer and rejects malformed or cross-origin data", async () => {
+  const saved = [];
+  const handler = createNetlifyBleLogHandler(() => async (attempt) => { saved.push(attempt); });
+  const event = (body, extra = {}) => ({ httpMethod: "POST", headers: { host: "test.netlify.app", origin: "https://test.netlify.app", "content-type": "application/json" }, body: JSON.stringify(body), ...extra });
+  assert.equal((await handler(event(sampleAttempt()))).statusCode, 201);
+  assert.equal(saved.length, 1);
+  assert.equal((await handler(event({ ...sampleAttempt(), machineId: "dryer1" }))).statusCode, 400);
+  assert.equal((await handler(event(sampleAttempt(), { headers: { host: "test.netlify.app", origin: "https://attacker.example", "content-type": "application/json" } }))).statusCode, 403);
+  assert.equal((await handler({ httpMethod: "GET" })).statusCode, 405);
 });
 
 test("static preview serves pages and data, and rejects removed endpoints and private paths", async () => {
@@ -270,7 +371,7 @@ test("search, site JSON, navigation and nested 404 recovery work under a Pages r
     const redirect = await fetch(origin + "/cwash?change=1", { redirect: "manual" });
     assert.equal(redirect.status, 301);
     assert.equal(redirect.headers.get("location"), "/cwash/?change=1");
-    for (const page of ["index.html", "activate.html"]) {
+    for (const page of ["index.html", "activate.html", "boulevard-replay.html"]) {
       const response = await fetch(new URL(page, base));
       assert.equal(response.status, 200);
       const html = await response.text();
@@ -281,6 +382,7 @@ test("search, site JSON, navigation and nested 404 recovery work under a Pages r
         assert.equal((await fetch(url)).status, 200);
       }
     }
+    assert.equal((await fetch(new URL("boulevard-captures.json", base))).status, 200);
 
     const requested = [];
     const browser = { localStorage: storage() };

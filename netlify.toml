@@ -1,0 +1,8 @@
+[build]
+  command = "node scripts/stage-site.js"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["pg"]
