@@ -4,9 +4,14 @@
   const picker = byId("machinePicker");
   const connectButton = byId("connectBtn");
   const cycleButtons = byId("machineButtons");
-  let site, machine, busy = false;
+  const capturedSecureTest = new URLSearchParams(location.search).get("secureReplay") === "1";
+  let site, machine, busy = false, diagnosticAttempt = null;
   const controller = window.createLaundryBluetooth({
     bluetooth: navigator.bluetooth,
+    replayCapturedSecure: capturedSecureTest,
+    onDiagnostic: (event) => {
+      if (diagnosticAttempt && diagnosticAttempt.events.length < 100) diagnosticAttempt.events.push(event);
+    },
     onDisconnect: () => {
       if (!busy) setState("ready", "Connection ended");
       updateControls();
@@ -54,7 +59,9 @@
       button.addEventListener("click", () => startCycle(cycle));
       cycleButtons.append(button);
     });
-    setState("ready", "Ready to connect");
+    setState("ready", "Ready to connect", capturedSecureTest && machine.bluetoothName === "AW88T7FE96R1"
+      ? "Captured secure test: Washer 2 Standard Eco only. The packet is sent only if the sequence is still 115."
+      : "");
   }
 
   function openPicker() {
@@ -97,7 +104,9 @@
     try {
       const result = await controller.connect(machine);
       if (result.occupied) setState("warning", `${machine.name} is in use`, "Choose another machine or wait.");
-      else setState("connected", `Connected to ${machine.name}`);
+      else setState("connected", `Connected to ${machine.name}`, capturedSecureTest && machine.bluetoothName === "AW88T7FE96R1"
+        ? "Captured secure test is ready for Standard Eco only."
+        : "");
     } catch (error) {
       const cancelled = error.name === "NotFoundError";
       setState(cancelled ? "ready" : "error", cancelled ? "Ready to connect" : "Couldn’t connect", cancelled
@@ -108,14 +117,51 @@
   async function startCycle(cycle) {
     if (busy || !controller.isConnected()) return;
     busy = true;
+    diagnosticAttempt = capturedSecureTest && machine.bluetoothName === "AW88T7FE96R1" && cycle.key === "standardEco"
+      ? { id: crypto.randomUUID(), siteId: site.id, machineId: machine.id, bluetoothName: machine.bluetoothName,
+        cycleKey: cycle.key, startedAt: new Date().toISOString(), events: [] }
+      : null;
     setState("starting", `Starting ${machine.name}…`);
     try {
       const result = await controller.start(cycle.key);
-      setState("complete", result.acknowledged ? `${machine.name} started` : "Start command sent", result.acknowledged
-        ? "" : "Check the machine to confirm it started.");
+      if (diagnosticAttempt) diagnosticAttempt.outcome = result.acknowledged ? "acknowledged" : "unconfirmed";
+      if (result.captureReplay) {
+        setState("warning", "Secure packet acknowledged", "Check the washer to confirm Standard Eco actually started.");
+      } else {
+        setState("complete", result.acknowledged ? `${machine.name} started` : "Start command sent", result.acknowledged
+          ? "" : "Check the machine to confirm it started.");
+      }
     } catch (error) {
+      if (diagnosticAttempt) {
+        diagnosticAttempt.outcome = "error";
+        diagnosticAttempt.errorMessage = String(error.message || error).slice(0, 500);
+      }
       setState("error", "Couldn’t confirm the start", error.message || "Check the machine before reconnecting.");
-    } finally { busy = false; updateControls(); }
+    } finally {
+      if (diagnosticAttempt) {
+        diagnosticAttempt.finishedAt = new Date().toISOString();
+        const note = await saveDiagnostic(diagnosticAttempt);
+        const hint = byId("connectionHint");
+        hint.textContent = [hint.textContent, note].filter(Boolean).join(" ");
+        hint.hidden = false;
+        diagnosticAttempt = null;
+      }
+      busy = false;
+      updateControls();
+    }
+  }
+
+  async function saveDiagnostic(attempt) {
+    const abort = new AbortController();
+    const timeout = setTimeout(() => abort.abort(), 20000);
+    try {
+      const response = await fetch("/.netlify/functions/ble-log", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(attempt), signal: abort.signal, keepalive: true
+      });
+      return response.status === 201 ? "Diagnostic saved to database." : "Diagnostic was not saved to database.";
+    } catch { return "Diagnostic was not saved to database."; }
+    finally { clearTimeout(timeout); }
   }
 
   async function init() {
@@ -130,7 +176,7 @@
       if (!site) { location.replace("index.html?change=1"); return; }
       store.rememberSite(site.id);
       // Keep the site in the URL so refresh also works when storage is blocked.
-      history.replaceState(null, "", store.activationUrl(site.id));
+      history.replaceState(null, "", `${store.activationUrl(site.id)}${capturedSecureTest ? "&secureReplay=1" : ""}`);
       byId("siteTitle").textContent = site.name;
       document.title = site.name;
       byId("pageStatus").hidden = site.machines.length > 0;
